@@ -1,10 +1,7 @@
 //! Data models and structures used throughout the application
 
-use bytemuck::{Pod, Zeroable};
-
 /// Message header structure for parsing binary messages
-#[derive(Debug, Copy, Clone, Pod, Zeroable)]
-#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
 pub struct MsgHeader {
     pub sof: u8,
     pub len: u16,
@@ -15,6 +12,23 @@ pub struct MsgHeader {
     pub ts_sec: u32, // second from 1970/1/1
     pub ts_us: u32,  // us portion
     pub seq_num: u16,
+}
+
+// Implement default constructor for MsgHeader
+impl MsgHeader {
+    pub fn new() -> Self {
+        MsgHeader {
+            sof: 0,
+            len: 0,
+            msg_id: 0,
+            ses_id: 0,
+            src_id: 0,
+            tgt_id: 0,
+            ts_sec: 0,
+            ts_us: 0,
+            seq_num: 0,
+        }
+    }
 }
 
 /// Report structure for parsed messages

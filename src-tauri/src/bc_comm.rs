@@ -1,7 +1,8 @@
 //! BC communication handling
 
 use tokio::io::AsyncReadExt;
-use bytemuck;
+use std::io::Cursor;
+use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::{
     models::{MessageReport, SockErrCode, MsgHeader},
@@ -18,7 +19,7 @@ pub async fn read_data(stream: &mut tokio::net::TcpStream, len: usize) -> Result
 
     let mut buf = vec![0; len]; // Pre-allocate buffer
 
-    match stream.read_exact(&mut buf).await {
+    match AsyncReadExt::read_exact(stream, &mut buf).await {
         Ok(_) => {
             // log::info!("Read {} bytes", len);
             Ok(buf)
@@ -42,7 +43,6 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<Vec<u8>, 
     let mut start_pos: usize = 0;
     let mut read_pos: usize = 0;
     let mut message_buf = [0; MAX_MESSAGE_LEN * 2];
-    let mut msg_len: usize = 0;
 
     loop {
         // Read Header
@@ -64,13 +64,37 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<Vec<u8>, 
                 START_FLAG,
             ) {
                 if pos == 0 {
-                    if let Some(header) = bytemuck::cast_slice::<u8, MsgHeader>(
-                        &message_buf[start_pos..start_pos + MSG_HEADER_LEN],
-                    )
-                    .first()
-                    {
-                        msg_len = header.len as usize;
+                    // Parse header using Cursor and byteorder
+                    let mut cursor = Cursor::new(&message_buf[start_pos..start_pos + MSG_HEADER_LEN]);
+                    let header = MsgHeader {
+                        sof: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                        len: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+                        msg_id: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+                        ses_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                        src_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                        tgt_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                        ts_sec: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
+                        ts_us: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
+                        seq_num: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+                    };
+                    let msg_len = header.len as usize;
+                    
+                    // read payload
+                    match read_data(stream, msg_len - MSG_HEADER_LEN).await {
+                        Ok(data) => {
+                            message_buf[MSG_HEADER_LEN..msg_len].copy_from_slice(&data);
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
                     }
+
+                    if message_buf[msg_len - 1] != END_FLAG {
+                        log::warn!("invalid end flag");
+                        // return Err(SockErrCode::InvalidEndFlag);
+                    }
+
+                    return Ok(message_buf[..msg_len].to_vec());
                 } else {
                     start_pos += pos;
                     read_pos = 0;
@@ -81,23 +105,6 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<Vec<u8>, 
                 read_pos = 0;
                 continue;
             }
-
-            // read payload
-            match read_data(stream, msg_len - MSG_HEADER_LEN).await {
-                Ok(data) => {
-                    message_buf[MSG_HEADER_LEN..msg_len].copy_from_slice(&data);
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-
-            if message_buf[msg_len - 1] != END_FLAG {
-                log::warn!("invalid end flag");
-                // return Err(SockErrCode::InvalidEndFlag);
-            }
-
-            return Ok(message_buf[..msg_len].to_vec());
         }
     }
 }
@@ -115,62 +122,71 @@ where
         return;
     }
 
-    // Use bytemuck to parse the message header
-    if let Some(header) = bytemuck::cast_slice::<u8, MsgHeader>(&msg[..MSG_HEADER_LEN]).first() {
-        // Verify the start flag
-        if header.sof != 0x1E {
-            log::warn!("Invalid start flag: {:02X}", header.sof);
+    // Parse message header using Cursor and byteorder
+    let mut cursor = Cursor::new(&msg[..MSG_HEADER_LEN]);
+    let header = MsgHeader {
+        sof: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+        len: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+        msg_id: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+        ses_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+        src_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+        tgt_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+        ts_sec: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
+        ts_us: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
+        seq_num: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+    };
+
+    // Verify the start flag
+    if header.sof != 0x1E {
+        log::warn!("Invalid start flag: {:02X}", header.sof);
+        return;
+    }
+
+    // Fix packed struct alignment issue
+    let ts_sec = header.ts_sec;
+    let ts_us = header.ts_us;
+    let ts = ts_sec as u64 * US_PER_SEC + ts_us as u64;
+    let dt = match std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_micros(ts)) {
+        Some(duration) => chrono::DateTime::<chrono::Utc>::from(duration),
+        None => {
+            log::warn!("Invalid timestamp: {} seconds, {} microseconds", ts_sec, ts_us);
             return;
         }
+    };
 
-        // Fix packed struct alignment issue
-        let ts_sec = u32::from_le(header.ts_sec); // or u32::from_be, depending on byte order
-        let ts_us = u32::from_le(header.ts_us);   // or u32::from_be, depending on byte order
-        let ts = ts_sec as u64 * US_PER_SEC + ts_us as u64;
-        let dt = match std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_micros(ts)) {
-            Some(duration) => chrono::DateTime::<chrono::Utc>::from(duration),
-            None => {
-                log::warn!("Invalid timestamp: {} seconds, {} microseconds", ts_sec, ts_us);
-                return;
+    let sender = get_node_name(header.src_id);
+    let receiver = get_node_name(header.tgt_id);
+    let message_id = get_msg_name(header.msg_id);
+
+    // Optimize payload processing: use pre-allocated String and write! macro
+    let payload = {
+        let mut result = String::with_capacity(msg.len() * 3); // Estimate capacity
+        for (i, byte) in msg[MSG_HEADER_LEN..].iter().enumerate() {
+            if i > 0 {
+                result.push(' ');
             }
-        };
+            use std::fmt::Write;
+            write!(result, "{:02X}", byte).unwrap(); // Use write! macro for better efficiency
+        }
+        result
+    };
 
-        let sender = get_node_name(header.src_id);
-        let receiver = get_node_name(header.tgt_id);
-        let message_id = get_msg_name(header.msg_id);
+    let msg_report = MessageReport {
+        datetime: dt.format("%Y-%m-%d %H:%M:%S:%3f").to_string(),
+        sender,
+        receiver,
+        message_id,
+        payload,
+    };
 
-        // Optimize payload processing: use pre-allocated String and write! macro
-        let payload = {
-            let mut result = String::with_capacity(msg.len() * 3); // Estimate capacity
-            for (i, byte) in msg[MSG_HEADER_LEN..].iter().enumerate() {
-                if i > 0 {
-                    result.push(' ');
-                }
-                use std::fmt::Write;
-                write!(result, "{:02X}", byte).unwrap(); // Use write! macro for better efficiency
-            }
-            result
-        };
+    // log::info!(
+    //     "[{}][{}]: {} -> {} : {}",
+    //     msg_report.datetime,
+    //     msg_report.message_id,
+    //     msg_report.sender,
+    //     msg_report.receiver,
+    //     msg_report.payload
+    // );
 
-        let msg_report = MessageReport {
-            datetime: dt.format("%Y-%m-%d %H:%M:%S:%3f").to_string(),
-            sender,
-            receiver,
-            message_id,
-            payload,
-        };
-
-        // log::info!(
-        //     "[{}][{}]: {} -> {} : {}",
-        //     msg_report.datetime,
-        //     msg_report.message_id,
-        //     msg_report.sender,
-        //     msg_report.receiver,
-        //     msg_report.payload
-        // );
-
-        message_handler(msg_report);
-    } else {
-        log::error!("Failed to extract message header");
-    }
+    message_handler(msg_report);
 }

@@ -2261,6 +2261,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytemuck",
+ "byteorder",
  "chrono",
  "futures-util",
  "lazy_static",
