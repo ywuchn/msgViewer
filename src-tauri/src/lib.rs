@@ -58,11 +58,6 @@ enum SockErrCode {
     SockError,
 }
 
-struct KeyValue<'a> {
-    k: u16,
-    v: &'a str,
-}
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static APP_HANDLE: OnceCell<RwLock<Option<AppHandle>>> = OnceCell::new();
@@ -107,14 +102,6 @@ fn get_app_handle() -> Option<AppHandle> {
     APP_HANDLE
         .get()
         .and_then(|handle_lock| handle_lock.read().clone())
-}
-
-fn emit_event(event: &str, payload: impl serde::Serialize + Clone + 'static) -> tauri::Result<()> {
-    if let Some(handle) = get_app_handle() {
-        handle.emit(event, payload)
-    } else {
-        Err(tauri::Error::InvalidWindowHandle)
-    }
 }
 
 fn get_ws_running() -> bool {
@@ -193,7 +180,10 @@ fn get_msg_name(msg_id: u16) -> String {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-async fn handle_message(msg: Vec<u8>, message_handler: impl AsyncFn(MessageReport)) {
+async fn handle_message<F>(msg: Vec<u8>, message_handler: F) 
+where 
+    F: FnOnce(MessageReport),
+{
     if msg.len() < MSG_HEADER_LEN {
         log::warn!(
             "Message too short to contain a valid header, length: {}",
@@ -256,7 +246,7 @@ async fn handle_message(msg: Vec<u8>, message_handler: impl AsyncFn(MessageRepor
         //     msg_report.payload
         // );
 
-        message_handler(msg_report).await;
+        message_handler(msg_report);
     } else {
         log::error!("Failed to extract message header");
     }
@@ -412,10 +402,13 @@ async fn start_comm_with_bc(
                                 Ok(msg) => {
                                     // log::info!("Recv message{:?}.", msg);
                                     let tx_cloned = tx.clone();
-                                    let msg_handler = async move |msg_report: MessageReport| {
-                                        if let Err(e) = tx_cloned.send(msg_report).await {
-                                            log::error!("Failed to send message report: {}", e);
-                                        }
+                                    let msg_handler = move |msg_report: MessageReport| {
+                                        // Spawn a task to send the message report
+                                        tokio::spawn(async move {
+                                            if let Err(e) = tx_cloned.send(msg_report).await {
+                                                log::error!("Failed to send message report: {}", e);
+                                            }
+                                        });
                                     };
                                     handle_message(msg, msg_handler).await;
                                 }
@@ -530,8 +523,6 @@ async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStream>) 
                         }
                         "stop_recv" => {
                             set_bc_comm_running(false);
-                            // set_ws_running(false);
-                            // sink.lock().await.close().await.unwrap();
                         }
                         _ => {
                             log::info!("Unknown command: {}", cmd.command);
@@ -545,17 +536,10 @@ async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStream>) 
             }
             Ok(Some(Err(e))) => {
                 log::warn!("Websocket read error: {}", e);
-                // Close the connection on serious errors
-                // if let Err(close_err) = sink.lock().await.close().await {
-                //     log::error!("Failed to close WebSocket connection after error: {}", close_err);
-                // }
+                // Remove commented out error handling code
             }
             Err(_) => {
-                // Timeout occurred, optionally send a heartbeat
-                // log::debug!("WebSocket timeout occurred, sending heartbeat...");
-                // if let Err(e) = sink.lock().await.send(serde_json::to_string(&Heartbeat {}).unwrap().into()).await {
-                //     log::warn!("Failed to send heartbeat: {}", e);
-                // }
+                // Remove commented out heartbeat code
             }
         }
         if !get_ws_running() {
@@ -639,12 +623,6 @@ async fn start_websocket(app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn stop_websocket(_app_handle: AppHandle) -> Result<(), String> {
-    log::info!("stop_websocket");
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -660,7 +638,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![start_websocket, stop_websocket])
+        .invoke_handler(tauri::generate_handler![start_websocket])
         .run(tauri::generate_context!())
         .map_err(|err| {
             eprintln!("Error while running Tauri application: {}", err);
