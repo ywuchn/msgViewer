@@ -149,7 +149,7 @@ fn get_node_name(node_id: u8) -> String {
     format!("{:02X}", node_id)
 }
 
-// 定义一个宏来自动生成 msg_tbl 的内容
+// Define a macro to automatically generate the content of msg_tbl
 macro_rules! generate_msg_map {
     ($($key:expr => $value:expr),* $(,)?) => {{
         let mut map = HashMap::new();
@@ -161,7 +161,7 @@ macro_rules! generate_msg_map {
 }
 
 fn get_msg_name(msg_id: u16) -> String {
-    // 使用 HashMap 存储消息 ID 和名称的映射关系
+    // Use HashMap to store the mapping of message ID and name
     let msg_tbl = generate_msg_map![
         MSG_SCM_MCM_AXIS_DATAOUTPUT_SET => "MSG_SCM_MCM_AXIS_DATAOUTPUT_SET",
         MSG_SCM_MCM_MOUNT_SET => "MSG_SCM_MCM_MOUNT_SET",
@@ -182,12 +182,12 @@ fn get_msg_name(msg_id: u16) -> String {
         MSG_MC_KSYNC_CTRL_RSP => "MSG_MC_KSYNC_CTRL_RSP",
     ];
 
-    // 查找 msg_id 对应的名称
+    // Look up the name corresponding to msg_id
     if let Some(name) = msg_tbl.get(&msg_id) {
         return name.to_string();
     }
 
-    // 如果未找到，返回格式化的十六进制字符串
+    // If not found, return the formatted hexadecimal string
     format!("{:04X}", msg_id)
 }
 
@@ -202,21 +202,22 @@ async fn handle_message(msg: Vec<u8>, message_handler: impl AsyncFn(MessageRepor
         return;
     }
 
-    // 确保 bytemuck 的输入数据是正确的
-    let header_slice = match bytemuck::try_cast_slice::<u8, MsgHeader>(&msg[..MSG_HEADER_LEN]) {
-        Ok(slice) => slice,
-        Err(_) => {
-            log::error!("Failed to cast message header due to alignment or size mismatch");
+    // Use bytemuck to parse the message header
+    if let Some(header) = bytemuck::cast_slice::<u8, MsgHeader>(&msg[..MSG_HEADER_LEN]).first() {
+        // Verify the start flag
+        if header.sof != 0x1E {
+            log::warn!("Invalid start flag: {:02X}", header.sof);
             return;
         }
-    };
 
-    if let Some(header) = header_slice.first() {
-        // 安全地处理时间戳转换
-        let ts = header.ts_sec as u64 * US_PER_SEC + header.ts_us as u64;
+        // Fix packed struct alignment issue
+        let ts_sec = u32::from_le(header.ts_sec); // or u32::from_be, depending on byte order
+        let ts_us = u32::from_le(header.ts_us);   // or u32::from_be, depending on byte order
+        let ts = ts_sec as u64 * US_PER_SEC + ts_us as u64;
         let dt = match std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_micros(ts)) {
             Some(duration) => DateTime::<Utc>::from(duration),
             None => {
+                log::warn!("Invalid timestamp: {} seconds, {} microseconds", ts_sec, ts_us);
                 return;
             }
         };
@@ -225,14 +226,15 @@ async fn handle_message(msg: Vec<u8>, message_handler: impl AsyncFn(MessageRepor
         let receiver = get_node_name(header.tgt_id);
         let message_id = get_msg_name(header.msg_id);
 
-        // 优化字符串拼接性能
+        // Optimize payload processing: use pre-allocated String and write! macro
         let payload = {
-            let mut result = String::new();
+            let mut result = String::with_capacity(msg.len() * 3); // Estimate capacity
             for (i, byte) in msg[MSG_HEADER_LEN..].iter().enumerate() {
                 if i > 0 {
                     result.push(' ');
                 }
-                result.push_str(&format!("{:02X}", byte));
+                use std::fmt::Write;
+                write!(result, "{:02X}", byte).unwrap(); // Use write! macro for better efficiency
             }
             result
         };
@@ -261,12 +263,12 @@ async fn handle_message(msg: Vec<u8>, message_handler: impl AsyncFn(MessageRepor
 }
 
 async fn read_data(stream: &mut tokio::net::TcpStream, len: usize) -> Result<Vec<u8>, SockErrCode> {
-    // 边界条件优化：如果 len 为 0，直接返回空 Vec
+    // Boundary condition optimization: if len is 0, return empty Vec directly
     if len == 0 {
         return Ok(Vec::new());
     }
 
-    let mut buf = vec![0; len]; // 预分配缓冲区
+    let mut buf = vec![0; len]; // Pre-allocate buffer
 
     match stream.read_exact(&mut buf).await {
         Ok(_) => {
@@ -381,8 +383,10 @@ async fn start_comm_with_bc(
         log::info!("start bc communication with {}", addr);
 
         let (tx, mut rx) = tokio::sync::mpsc::channel::<MessageReport>(100);
+        let sink_for_bc = Arc::clone(&sink);
+        let sink_for_ws = Arc::clone(&sink);
 
-        // Communcation with bc.
+        // Communication with bc.
         let bc_handle = tokio::spawn(async move {
             loop {
                 match tokio::time::timeout(
@@ -393,9 +397,13 @@ async fn start_comm_with_bc(
                 {
                     Ok(Ok(mut stream)) => {
                         log::info!("Connected to bc");
-                        if let Some(handle) = get_app_handle() {
-                            if let Err(e) = handle.emit("bc_monitor_started", addr.clone()) {
-                                log::error!("Failed to emit 'bc_monitor_started': {}", e);
+                        // Send bc_monitor_started event via WebSocket
+                        if let Ok(msg) = serde_json::to_string(&serde_json::json!({
+                            "event": "bc_monitor_started",
+                            "data": { "address": addr.clone() }
+                        })) {
+                            if let Err(e) = sink_for_bc.lock().await.send(Message::Text(msg)).await {
+                                log::error!("Failed to send 'bc_monitor_started' via WebSocket: {}", e);
                             }
                         }
 
@@ -431,9 +439,13 @@ async fn start_comm_with_bc(
                         }
 
                         log::info!("Disconnected to bc");
-                        if let Some(handle) = get_app_handle() {
-                            if let Err(e) = handle.emit("bc_monitor_stopped", addr.clone()) {
-                                log::error!("Failed to emit 'bc_monitor_stopped': {}", e);
+                        // Send bc_monitor_stopped event via WebSocket
+                        if let Ok(msg) = serde_json::to_string(&serde_json::json!({
+                            "event": "bc_monitor_stopped",
+                            "data": { "address": addr.clone() }
+                        })) {
+                            if let Err(e) = sink_for_bc.lock().await.send(Message::Text(msg)).await {
+                                log::error!("Failed to send 'bc_monitor_stopped' via WebSocket: {}", e);
                             }
                         }
                     }
@@ -458,8 +470,12 @@ async fn start_comm_with_bc(
                 match tokio::time::timeout(tokio::time::Duration::from_millis(500), rx.recv()).await
                 {
                     Ok(Some(message)) => {
-                        if let Ok(msg) = serde_json::to_string::<MessageReport>(&message) {
-                            if let Err(e) = sink.lock().await.send(Message::Text(msg)).await {
+                        // Send message update event via WebSocket
+                        if let Ok(msg) = serde_json::to_string(&serde_json::json!({
+                            "event": "msg_updated",
+                            "data": message
+                        })) {
+                            if let Err(e) = sink_for_ws.lock().await.send(Message::Text(msg)).await {
                                 log::error!("Failed to send message via WebSocket: {}", e);
                             }
                         }

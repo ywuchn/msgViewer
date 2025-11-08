@@ -36,16 +36,16 @@ import Grid from '@mui/material/Grid2';
 import "./App.css";
 
 interface MessageReport {
-  datetime: String;
-  sender: String;
-  receiver: String;
-  messageId: String;
-  payload: String;
+  datetime: string;
+  sender: string;
+  receiver: string;
+  messageId: string;
+  payload: string;
 }
 
 interface FrontEndCommand {
-  command: String,
-  content: String,
+  command: string;
+  content: string;
 }
 
 function forwardConsole(
@@ -73,7 +73,7 @@ function isValidIpSegment(segment: string): boolean {
   return ipv4SegmentRegex.test(segment);
 }
 
-function CheckIpAddress(ipAddress: string): boolean {
+function checkIpAddress(ipAddress: string): boolean {
   // info("ip address is: " + ipAddress + "");
   if (typeof ipAddress !== "string") {
     return false;
@@ -96,7 +96,7 @@ function CheckIpAddress(ipAddress: string): boolean {
   return true;
 }
 
-function CheckPortNumber(portNumber: string): boolean {
+function checkPortNumber(portNumber: string): boolean {
   const portRegex = /^(6553[0-5]|655[0-2]\d|65[0-4]\d{2}|6[0-4]\d{3}|[1-5]\d{4}|[1-9]\d{0,3})$/;
 
   // info("port is: " + portNumber + "");
@@ -106,7 +106,7 @@ function CheckPortNumber(portNumber: string): boolean {
   return portRegex.test(portNumber);
 }
 
-const IPAddresEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, setEditGood }: IPAddressEditProps) => {
+const IpAddressEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, setEditGood }: IPAddressEditProps) => {
   const [ipGood, setIpGood] = useState(true);
   const [portGood, setPortGood] = useState(true);
 
@@ -114,7 +114,7 @@ const IPAddresEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, setE
     const value = e.target.value;
     setIpAddress(value);
     // info("ip address is changed to: " + value + "");
-    if (CheckIpAddress(value)) {
+    if (checkIpAddress(value)) {
       setIpGood(true);
       setEditGood(portGood);
     } else {
@@ -126,7 +126,7 @@ const IPAddresEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, setE
   const handlePortChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setPortNumber(value);
-    if (CheckPortNumber(value)) {
+    if (checkPortNumber(value)) {
       setPortGood(true);
       setEditGood(ipGood);
     } else {
@@ -207,10 +207,31 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
     };
 
     ws.onmessage = function (event) {
-      const parsedData = JSON.parse(event.data);
-      const report: MessageReport = parsedData as MessageReport;
-      // info("Recv:[" + report.datetime + "][" + report.sender + "=>" + report.receiver + "][" + report.messageId + "]:" + report.payload);
-      onRecvReport(report);
+      try {
+        // Parse WebSocket message
+        const wsMessage = JSON.parse(event.data);
+        
+        // Check message type and handle accordingly
+        if (wsMessage.event === "msg_updated") {
+          // Handle message update event
+          const report: MessageReport = wsMessage.data as MessageReport;
+          onRecvReport(report);
+        }
+        else if (wsMessage.event === "bc_monitor_started") {
+          // Handle BC monitor start event
+          info("bc_monitor_started: " + JSON.stringify(wsMessage.data));
+        }
+        else if (wsMessage.event === "bc_monitor_stopped") {
+          // Handle BC monitor stop event
+          info("bc_monitor_stopped: " + JSON.stringify(wsMessage.data));
+        }
+        else if (wsMessage.event === "ws_started") {
+          // Handle WebSocket server start event
+          info("ws_started: " + JSON.stringify(wsMessage.data));
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
     };
 
     ws.onerror = function (event) {
@@ -260,18 +281,6 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   useEffect(() => {
     webSocketStart();
 
-    listen("ws_started", (e: { payload: string }) => {
-      info("ws_started: " + e.payload);
-    });
-
-    listen("bc_monitor_started", (e: { payload: string }) => {
-      info("bc_monitor_started: " + e.payload);
-    });
-
-    listen("bc_monitor_stopped", (e: { payload: string }) => {
-      info("bc_monitor_stopped: " + e.payload);
-    });
-
     return () => {
       if (socketRef.current) {
         socketRef.current.close();
@@ -283,7 +292,7 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   return (
     <div className="Toolbar">
       <div className="addr-input-container">
-        <IPAddresEdit ipAddress={ipAddress} setIpAddress={setIpAddress} portNumber={portNumber} setPortNumber={setPortNumber} setEditGood={setAddressGood} />
+        <IpAddressEdit ipAddress={ipAddress} setIpAddress={setIpAddress} portNumber={portNumber} setPortNumber={setPortNumber} setEditGood={setAddressGood} />
       </div>
       <Stack spacing={2} direction="row" sx={{ paddingLeft: 5 }}>
         <Tooltip title="Start receiving messages">
@@ -292,7 +301,7 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
         <Tooltip title="Stop receiving messages">
           <Button variant="outlined" onClick={webSocketStop}>Stop</Button>
         </Tooltip>
-        <Tooltip title="Configuarton">
+        <Tooltip title="Configuration">
           <Button variant="outlined" onClick={configPanelVisible}>Config</Button>
         </Tooltip>
       </Stack>
@@ -303,9 +312,9 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 enum FilterType {
-  MESSAGEID = 0,
-  SOURCEID = 1,
-  TARGETID = 2,
+  MessageId = 0,
+  SourceId = 1,
+  TargetId = 2,
 }
 
 interface FilterProps {
@@ -319,35 +328,35 @@ interface ConfigPanelProps {
   onChange: (filterProps: FilterProps) => void;
 }
 const ConfigPanel = ({ isVisible, onChange }: ConfigPanelProps) => {
-  const [msgFilterVisiable, setMsgFilterVisiable] = useState(true);
-  const [tarFilterVisiable, setTarFilterVisiable] = useState(false);
-  const [srcFilterVisiable, setSrcFilterVisiable] = useState(false);
+  const [msgFilterVisible, setMsgFilterVisible] = useState(true);
+  const [tarFilterVisible, setTarFilterVisible] = useState(false);
+  const [srcFilterVisible, setSrcFilterVisible] = useState(false);
   const [msgFilterData, setMsgFilterData] = useState('');
   const [srcFilterData, setSrcFilterData] = useState('');
   const [tarFilterData, setTarFilterData] = useState('');
-  const [filterType, setFilterType] = useState<FilterType>(FilterType.MESSAGEID);
+  const [filterType, setFilterType] = useState<FilterType>(FilterType.MessageId);
 
 
   const handleFilterTypeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = (event.target as HTMLInputElement).value;
     if (value == "msgId") {
-      setMsgFilterVisiable(true);
-      setSrcFilterVisiable(false);
-      setTarFilterVisiable(false);
-      setFilterType(FilterType.MESSAGEID);
-      onChange({ filterType: FilterType.MESSAGEID, filterData: msgFilterData });
+      setMsgFilterVisible(true);
+      setSrcFilterVisible(false);
+      setTarFilterVisible(false);
+      setFilterType(FilterType.MessageId);
+      onChange({ filterType: FilterType.MessageId, filterData: msgFilterData });
     } else if (value == "srcId") {
-      setMsgFilterVisiable(false);
-      setSrcFilterVisiable(true);
-      setTarFilterVisiable(false);
-      setFilterType(FilterType.SOURCEID);
-      onChange({ filterType: FilterType.SOURCEID, filterData: srcFilterData });
+      setMsgFilterVisible(false);
+      setSrcFilterVisible(true);
+      setTarFilterVisible(false);
+      setFilterType(FilterType.SourceId);
+      onChange({ filterType: FilterType.SourceId, filterData: srcFilterData });
     } else if (value == "tarId") {
-      setMsgFilterVisiable(false);
-      setSrcFilterVisiable(false);
-      setTarFilterVisiable(true);
-      setFilterType(FilterType.TARGETID);
-      onChange({ filterType: FilterType.TARGETID, filterData: tarFilterData });
+      setMsgFilterVisible(false);
+      setSrcFilterVisible(false);
+      setTarFilterVisible(true);
+      setFilterType(FilterType.TargetId);
+      onChange({ filterType: FilterType.TargetId, filterData: tarFilterData });
     }
   };
 
@@ -355,18 +364,18 @@ const ConfigPanel = ({ isVisible, onChange }: ConfigPanelProps) => {
     const { name, value } = event.target;
     if (name == "msgId") {
       setMsgFilterData(value);
-      if (filterType == FilterType.MESSAGEID) {
-        onChange({ filterType: FilterType.MESSAGEID, filterData: value });
+      if (filterType == FilterType.MessageId) {
+        onChange({ filterType: FilterType.MessageId, filterData: value });
       }
     } else if (name == "srcId") {
       setSrcFilterData(value);
-      if (filterType == FilterType.SOURCEID) {
-        onChange({ filterType: FilterType.SOURCEID, filterData: value });
+      if (filterType == FilterType.SourceId) {
+        onChange({ filterType: FilterType.SourceId, filterData: value });
       }
     } else if (name == "tarId") {
       setTarFilterData(value);
-      if (filterType == FilterType.TARGETID) {
-        onChange({ filterType: FilterType.TARGETID, filterData: value });
+      if (filterType == FilterType.TargetId) {
+        onChange({ filterType: FilterType.TargetId, filterData: value });
       }
     }
   }
@@ -392,13 +401,13 @@ const ConfigPanel = ({ isVisible, onChange }: ConfigPanelProps) => {
         </div>
         <div className="filterContent">
           <Stack>
-            <div style={{ display: msgFilterVisiable ? 'block' : 'none', padding: '10px' }} >
+            <div style={{ display: msgFilterVisible ? 'block' : 'none', padding: '10px' }} >
               <TextField label="Message ID" variant="outlined" value={msgFilterData} onChange={handleFilterDataChange} name="msgId" />
             </div>
-            <div style={{ display: srcFilterVisiable ? 'block' : 'none', padding: '10px' }} >
+            <div style={{ display: srcFilterVisible ? 'block' : 'none', padding: '10px' }} >
               <TextField label="Sender" variant="outlined" value={srcFilterData} onChange={handleFilterDataChange} name="srcId" />
             </div>
-            <div style={{ display: tarFilterVisiable ? 'block' : 'none', padding: '10px' }} >
+            <div style={{ display: tarFilterVisible ? 'block' : 'none', padding: '10px' }} >
               <TextField label="Receiver" variant="outlined" value={tarFilterData} onChange={handleFilterDataChange} name="tarId" />
             </div>
           </Stack>
@@ -577,7 +586,7 @@ const App = () => {
   const [reports, setReports] = useState<MessageReport[]>([]);
   const [configPanelVisible, setConfigPanelVisible] = useState(true);
 
-  const [filter, setFilter] = useState<FilterProps>({ filterType: FilterType.MESSAGEID, filterData: '' });
+  const [filter, setFilter] = useState<FilterProps>({ filterType: FilterType.MessageId, filterData: '' });
 
   forwardConsole("log", trace);
   forwardConsole("debug", debug);
@@ -610,28 +619,21 @@ const App = () => {
     if (filter.filterData == '') {
       return true;
     }
-    if (filter.filterType == FilterType.MESSAGEID) {
+    if (filter.filterType == FilterType.MessageId) {
       return report.messageId == filter.filterData;
-    } else if (filter.filterType == FilterType.SOURCEID) {
+    } else if (filter.filterType == FilterType.SourceId) {
       return report.sender == filter.filterData;
     } else {
       return report.receiver == filter.filterData;
     }
   }
 
-  useEffect(() => {
-    // info("listen to msg_updated message in js.");
-    listen("msg_updated", (e: { payload: MessageReport }) => {
-      insertReport(e.payload);
-    });
-  }, []);
-
   return (
     <div className="App" >
       <Stack spacing={2} >
         {/* toolbar */}
         <Toolbar onRecvReport={insertReport} setConfigPanelVisible={setConfigPanelVisible} />
-        <ConfigPanel isVisiable={configPanelVisible} onChange={onFilterChange} />
+        <ConfigPanel isVisible={configPanelVisible} onChange={onFilterChange} />
         {/* message display */}
         <MessageGrid reports={reports.filter(FilterFunc)} />
         {/* <MessageTable reports={reports.filter(FilterFunc)} /> */}
