@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { useEffect, useState, useRef } from "react";
 
-import { invoke } from "@tauri-apps/api/core";
+// Remove invoke import since we no longer need to call start_websocket command
+// import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { warn, debug, trace, info, error } from "@tauri-apps/plugin-log";
 
@@ -174,7 +175,8 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   async function webSocketStart() {
     if (!wsStarted) {
       info("webSocketStart");
-      await invoke("start_websocket");
+      // WebSocket server is now started automatically when the application starts
+      // await invoke("start_websocket");
       setWsStarted(true);
     }
   }

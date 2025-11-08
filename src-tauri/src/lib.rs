@@ -1,25 +1,19 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
-use tauri::{AppHandle, Emitter};
-
-use std::io::prelude::*;
-
+use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
-
-use lazy_static::lazy_static;
-use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use bytemuck::{Pod, Zeroable};
 use chrono::{DateTime, Utc};
-use futures_util::stream::{SplitSink, StreamExt};
-use futures_util::SinkExt;
-use tokio_tungstenite::tungstenite::protocol::Message;
+use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
+use tauri::{AppHandle, Emitter, State, WindowEvent};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
+use futures_util::stream::StreamExt;
+use futures_util::sink::SinkExt;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -37,7 +31,7 @@ struct MsgHeader {
     seq_num: u16,
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageReport {
     pub datetime: String,
@@ -71,9 +65,6 @@ lazy_static! {
 
 const MAX_MESSAGE_LEN: usize = 2000;
 const MSG_HEADER_LEN: usize = std::mem::size_of::<MsgHeader>();
-const MSG_CSUM_LEN: usize = 2;
-const MSG_DLMT_LEN: usize = 1;
-const MSG_NPLD_LEN: usize = MSG_HEADER_LEN + MSG_CSUM_LEN + MSG_DLMT_LEN;
 
 const MSG_SCM_MCM_AXIS_DATAOUTPUT_SET: u16 = 0x1020;
 const MSG_SCM_MCM_MOUNT_SET: u16 = 0x1021;
@@ -101,7 +92,8 @@ const US_PER_SEC: u64 = 1000000;
 fn get_app_handle() -> Option<AppHandle> {
     APP_HANDLE
         .get()
-        .and_then(|handle_lock| handle_lock.read().clone())
+        .and_then(|handle_lock| handle_lock.read().ok())
+        .and_then(|guard| guard.clone())
 }
 
 fn get_ws_running() -> bool {
@@ -289,84 +281,66 @@ async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<Vec<u8>, Sock
     let mut message_buf = [0; MAX_MESSAGE_LEN * 2];
     let mut msg_len: usize = 0;
 
-    // Read Header
-    while read_pos < MSG_HEADER_LEN {
-        let read_buf = message_buf[start_pos + read_pos..start_pos + MSG_HEADER_LEN].as_mut();
+    loop {
+        // Read Header
+        while read_pos < MSG_HEADER_LEN {
+            let read_buf = message_buf[start_pos + read_pos..start_pos + MSG_HEADER_LEN].as_mut();
 
-        match read_data(stream, MSG_HEADER_LEN - read_pos).await {
-            Ok(data) => {
-                read_buf.copy_from_slice(&data);
+            match read_data(stream, MSG_HEADER_LEN - read_pos).await {
+                Ok(data) => {
+                    read_buf.copy_from_slice(&data);
+                }
+                Err(e) => {
+                    return Err(e);
+                }
             }
-            Err(e) => {
-                return Err(e);
-            }
-        }
 
-        // locate start flag.
-        if let Some(pos) = find_start_flag(
-            &message_buf[start_pos..start_pos + MSG_HEADER_LEN],
-            START_FLAG,
-        ) {
-            if pos == 0 {
-                if let Some(header) = bytemuck::cast_slice::<u8, MsgHeader>(
-                    &message_buf[start_pos..start_pos + MSG_HEADER_LEN],
-                )
-                .first()
-                {
-                    // check message header.
-                    if header.len as usize >= MSG_NPLD_LEN && header.len as usize <= MAX_MESSAGE_LEN
+            // locate start flag.
+            if let Some(pos) = find_start_flag(
+                &message_buf[start_pos..start_pos + MSG_HEADER_LEN],
+                START_FLAG,
+            ) {
+                if pos == 0 {
+                    if let Some(header) = bytemuck::cast_slice::<u8, MsgHeader>(
+                        &message_buf[start_pos..start_pos + MSG_HEADER_LEN],
+                    )
+                    .first()
                     {
                         msg_len = header.len as usize;
-                        break;
-                    } else {
-                        // log::warn!("Invalid message length: {}", header.len);
-                        return Err(SockErrCode::SockError); // InvalidMessageLength
                     }
                 } else {
-                    log::warn!("Failed to parse message header");
-                    return Err(SockErrCode::SockError);
+                    start_pos += pos;
+                    read_pos = 0;
+                    continue;
                 }
             } else {
-                start_pos += pos;
-                read_pos = MSG_HEADER_LEN - pos;
-                if start_pos >= MSG_HEADER_LEN * 2 {
-                    message_buf.copy_within(start_pos..start_pos + read_pos, 0);
-                    start_pos = 0;
-                }
+                start_pos = 0;
+                read_pos = 0;
                 continue;
             }
-        } else {
-            // no start flag found, discard all data and star from 0.
-            start_pos = 0;
-            read_pos = 0;
-            continue;
+
+            // read payload
+            match read_data(stream, msg_len - MSG_HEADER_LEN).await {
+                Ok(data) => {
+                    message_buf[MSG_HEADER_LEN..msg_len].copy_from_slice(&data);
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+
+            if message_buf[msg_len - 1] != END_FLAG {
+                log::warn!("invalid end flag");
+                // return Err(SockErrCode::InvalidEndFlag);
+            }
+
+            return Ok(message_buf[..msg_len].to_vec());
         }
     }
-    if start_pos > 0 {
-        message_buf.copy_within(start_pos..start_pos + read_pos, 0);
-        start_pos = 0;
-    }
-
-    // read payload
-    match read_data(stream, msg_len - MSG_HEADER_LEN).await {
-        Ok(data) => {
-            message_buf[MSG_HEADER_LEN..msg_len].copy_from_slice(&data);
-        }
-        Err(e) => {
-            return Err(e);
-        }
-    }
-
-    if message_buf[msg_len - 1] != END_FLAG {
-        log::warn!("invalid end flag");
-        // return Err(SockErrCode::InvalidEndFlag);
-    }
-
-    Ok(message_buf[..msg_len].to_vec())
 }
 
 async fn start_comm_with_bc(
-    sink: Arc<Mutex<SplitSink<WebSocketStream<tokio::net::TcpStream>, Message>>>,
+    sink: Arc<Mutex<dyn futures_util::sink::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static>>,
     addr: String,
 ) {
     tokio::spawn(async move {
@@ -392,7 +366,8 @@ async fn start_comm_with_bc(
                             "event": "bc_monitor_started",
                             "data": { "address": addr.clone() }
                         })) {
-                            if let Err(e) = sink_for_bc.lock().await.send(Message::Text(msg)).await {
+                            let mut guard = sink_for_bc.lock().await;
+                            if let Err(e) = guard.send(Message::Text(msg)).await {
                                 log::error!("Failed to send 'bc_monitor_started' via WebSocket: {}", e);
                             }
                         }
@@ -437,7 +412,8 @@ async fn start_comm_with_bc(
                             "event": "bc_monitor_stopped",
                             "data": { "address": addr.clone() }
                         })) {
-                            if let Err(e) = sink_for_bc.lock().await.send(Message::Text(msg)).await {
+                            let mut guard = sink_for_bc.lock().await;
+                            if let Err(e) = guard.send(Message::Text(msg)).await {
                                 log::error!("Failed to send 'bc_monitor_stopped' via WebSocket: {}", e);
                             }
                         }
@@ -468,7 +444,8 @@ async fn start_comm_with_bc(
                             "event": "msg_updated",
                             "data": message
                         })) {
-                            if let Err(e) = sink_for_ws.lock().await.send(Message::Text(msg)).await {
+                            let mut guard = sink_for_ws.lock().await;
+                            if let Err(e) = guard.send(Message::Text(msg)).await {
                                 log::error!("Failed to send message via WebSocket: {}", e);
                             }
                         }
@@ -609,27 +586,32 @@ async fn start_websocket_server(_msg_handler: Box<dyn Fn(MessageReport) + Send>)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#[tauri::command]
-async fn start_websocket(app_handle: AppHandle) -> Result<(), String> {
-    log::info!("start_websocket");
-
-    let handler = Box::new(move |report: MessageReport| {
-        if let Err(err) = app_handle.emit("msg_updated", report) {
-            log::error!("Failed to emit 'msg_updated' event: {}", err);
-        }
-    });
-    start_websocket_server(handler).await;
-
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize the WebSocket server when the application starts
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle();
             APP_HANDLE.get_or_init(|| RwLock::new(Some(handle.clone())));
+
+            tauri::async_runtime::spawn({
+                async move {
+                    let handler = Box::new(|report: MessageReport| {
+                        // For now, we'll just log that we received a message
+                        log::info!("Received message: {:?}", report);
+                    });
+                    start_websocket_server(handler).await;
+                }
+            });
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                log::info!("Received window close request; stopping WebSocket and communication tasks.");
+                set_ws_running(false);
+                set_bc_comm_running(false);
+            }
         })
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -638,10 +620,14 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![start_websocket])
+        // Remove the start_websocket command since we're starting it automatically
+        .invoke_handler(tauri::generate_handler![])
         .run(tauri::generate_context!())
         .map_err(|err| {
             eprintln!("Error while running Tauri application: {}", err);
+            // Set WebSocket server to stop when application exits
+            set_ws_running(false);
+            set_bc_comm_running(false);
             err
         })
         .expect("error while running tauri application");
