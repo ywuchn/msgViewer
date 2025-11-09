@@ -12,14 +12,11 @@ pub mod websocket;
 pub mod bc_comm;
 pub mod app_state;
 
-use models::{MsgHeader, MessageReport};
+use models::MessageReport;
 use websocket::WebSocketServer;
 use app_state::{APP_HANDLE, set_ws_running, set_bc_comm_running};
 
 // Constants
-const MAX_MESSAGE_LEN: usize = 2000;
-const MSG_HEADER_LEN: usize = std::mem::size_of::<MsgHeader>();
-
 const MSG_SCM_MCM_AXIS_DATAOUTPUT_SET: u16 = 0x1020;
 const MSG_SCM_MCM_MOUNT_SET: u16 = 0x1021;
 const MSG_SCM_MCM_INIT_REQ: u16 = 0x1023;
@@ -39,7 +36,8 @@ const MSG_MC_MOUNT_CTRL_RSP: u16 = 0x124C;
 const MSG_MC_DEV_CTRL_REQ: u16 = 0x124D;
 const MSG_MC_DEV_CTRL_RSP: u16 = 0x124E;
 
-const US_PER_SEC: u64 = 1000000;
+// Time-related constants
+pub const US_PER_SEC: u64 = 1000000;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -102,8 +102,8 @@ pub async fn start_comm_with_bc(
 
                         loop {
                             match read_packet(&mut stream).await {
-                                Ok(msg) => {
-                                    // log::info!("Recv message{:?}.", msg);
+                                Ok(message) => {
+                                    // log::info!("Recv message with header: {:?}", message.header);
                                     let tx_cloned = tx.clone();
                                     let msg_handler = move |msg_report: MessageReport| {
                                         // Spawn a task to send the message report
@@ -113,7 +113,7 @@ pub async fn start_comm_with_bc(
                                             }
                                         });
                                     };
-                                    handle_message(msg, msg_handler).await;
+                                    handle_message(message, msg_handler).await;
                                 }
                                 Err(e) => match e {
                                     crate::models::SockErrCode::SockDisconnected => {
