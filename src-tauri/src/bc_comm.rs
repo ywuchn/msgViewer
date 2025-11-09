@@ -47,63 +47,94 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<Vec<u8>, 
     loop {
         // Read Header
         while read_pos < MSG_HEADER_LEN {
-            let read_buf = message_buf[start_pos + read_pos..start_pos + MSG_HEADER_LEN].as_mut();
-
-            match read_data(stream, MSG_HEADER_LEN - read_pos).await {
+            // Calculate how many bytes we need to read
+            let bytes_to_read = MSG_HEADER_LEN - read_pos;
+            
+            match read_data(stream, bytes_to_read).await {
                 Ok(data) => {
-                    read_buf.copy_from_slice(&data);
+                    // Copy data to buffer at the correct position
+                    message_buf[start_pos + read_pos..start_pos + read_pos + data.len()].copy_from_slice(&data);
+                    read_pos += data.len();
                 }
                 Err(e) => {
                     return Err(e);
                 }
             }
 
-            // locate start flag.
-            if let Some(pos) = find_start_flag(
-                &message_buf[start_pos..start_pos + MSG_HEADER_LEN],
-                START_FLAG,
-            ) {
-                if pos == 0 {
-                    // Parse header using Cursor and byteorder
-                    let mut cursor = Cursor::new(&message_buf[start_pos..start_pos + MSG_HEADER_LEN]);
-                    let header = MsgHeader {
-                        sof: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-                        len: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
-                        msg_id: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
-                        ses_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-                        src_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-                        tgt_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-                        ts_sec: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
-                        ts_us: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
-                        seq_num: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
-                    };
-                    let msg_len = header.len as usize;
-                    
-                    // read payload
-                    match read_data(stream, msg_len - MSG_HEADER_LEN).await {
-                        Ok(data) => {
-                            message_buf[MSG_HEADER_LEN..msg_len].copy_from_slice(&data);
+            // Only search for start flag if we have read enough data
+            if read_pos >= MSG_HEADER_LEN {
+                // locate start flag in the current buffer window
+                if let Some(pos) = find_start_flag(
+                    &message_buf[start_pos..start_pos + read_pos],
+                    START_FLAG,
+                ) {
+                    if pos == 0 {
+                        // Start flag is at position 0, we have a complete header
+                        // Parse header using Cursor and byteorder
+                        let mut cursor = Cursor::new(&message_buf[start_pos..start_pos + MSG_HEADER_LEN]);
+                        let header = MsgHeader {
+                            sof: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                            len: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+                            msg_id: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+                            ses_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                            src_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                            tgt_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
+                            ts_sec: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
+                            ts_us: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
+                            seq_num: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+                        };
+                        let msg_len = header.len as usize;
+                        
+                        // Validate message length
+                        if msg_len < MSG_HEADER_LEN || msg_len > MAX_MESSAGE_LEN {
+                            log::warn!("Invalid message length: {}", msg_len);
+                            // Reset and continue searching
+                            start_pos = 0;
+                            read_pos = 0;
+                            continue;
                         }
-                        Err(e) => {
-                            return Err(e);
+                        
+                        // read payload
+                        match read_data(stream, msg_len - MSG_HEADER_LEN).await {
+                            Ok(data) => {
+                                message_buf[start_pos + MSG_HEADER_LEN..start_pos + msg_len].copy_from_slice(&data);
+                            }
+                            Err(e) => {
+                                return Err(e);
+                            }
                         }
-                    }
 
-                    if message_buf[msg_len - 1] != END_FLAG {
-                        log::warn!("invalid end flag");
-                        // return Err(SockErrCode::InvalidEndFlag);
-                    }
+                        if message_buf[start_pos + msg_len - 1] != END_FLAG {
+                            log::warn!("invalid end flag");
+                            // return Err(SockErrCode::InvalidEndFlag);
+                        }
 
-                    return Ok(message_buf[..msg_len].to_vec());
+                        return Ok(message_buf[start_pos..start_pos + msg_len].to_vec());
+                    } else {
+                        // Found start flag but not at position 0, discard bytes before start flag
+                        // Move valid data (from pos to read_pos) to the beginning of buffer
+                        let valid_data_len = read_pos - pos;
+                        if start_pos + pos + valid_data_len <= message_buf.len() {
+                            message_buf.copy_within(start_pos + pos..start_pos + read_pos, 0);
+                        } else {
+                            // Fallback: copy manually if copy_within would overflow
+                            let src_start = start_pos + pos;
+                            for i in 0..valid_data_len {
+                                message_buf[i] = message_buf[src_start + i];
+                            }
+                        }
+                        start_pos = 0;
+                        // Update read_pos: we have (read_pos - pos) valid bytes, need MSG_HEADER_LEN total
+                        read_pos = valid_data_len;
+                        // Continue to read the remaining bytes
+                        continue;
+                    }
                 } else {
-                    start_pos += pos;
+                    // No start flag found in the read data, discard all and start over
+                    start_pos = 0;
                     read_pos = 0;
                     continue;
                 }
-            } else {
-                start_pos = 0;
-                read_pos = 0;
-                continue;
             }
         }
     }
