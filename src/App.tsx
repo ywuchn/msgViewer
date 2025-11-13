@@ -1,12 +1,8 @@
 import * as React from 'react';
 import { useEffect, useState, useRef } from "react";
-
-// Remove invoke import since we no longer need to call start_websocket command
-// import { invoke } from "@tauri-apps/api/core";
-// import { listen } from "@tauri-apps/api/event";
 import { warn, debug, trace, info, error } from "@tauri-apps/plugin-log";
 
-import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRowSelectionModel, GridCallbackDetails } from '@mui/x-data-grid';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Stack from '@mui/material/Stack';
@@ -15,7 +11,6 @@ import Tooltip from '@mui/material/Tooltip';
 import Divider from '@mui/material/Divider';
 import Paper from '@mui/material/Paper';
 import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
 import Collapse from '@mui/material/Collapse';
 import Chip from '@mui/material/Chip';
 
@@ -24,10 +19,8 @@ import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormLabel from '@mui/material/FormLabel';
 import TextField from '@mui/material/TextField';
-// import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-// import ChevronRightIcon from '@mui/icons-material/ExpandMore';
-// import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
-// import { TreeItem } from '@mui/x-tree-view/TreeItem';
+import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
+import { TreeItem } from '@mui/x-tree-view/TreeItem';
 
 // Icons
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -37,9 +30,13 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import InboxIcon from '@mui/icons-material/Inbox';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import MessageIcon from '@mui/icons-material/Message';
+import PersonIcon from '@mui/icons-material/Person';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 
 import Typography from '@mui/material/Typography';
-// import Grid from '@mui/material/Grid2';
+import Grid from '@mui/material/Grid2';
 
 import { lightTheme } from './theme';
 
@@ -84,7 +81,6 @@ function isValidIpSegment(segment: string): boolean {
 }
 
 function checkIpAddress(ipAddress: string): boolean {
-  // info("ip address is: " + ipAddress + "");
   if (typeof ipAddress !== "string") {
     return false;
   }
@@ -108,8 +104,6 @@ function checkIpAddress(ipAddress: string): boolean {
 
 function checkPortNumber(portNumber: string): boolean {
   const portRegex = /^(6553[0-5]|655[0-2]\d|65[0-4]\d{2}|6[0-4]\d{3}|[1-5]\d{4}|[1-9]\d{0,3})$/;
-
-  // info("port is: " + portNumber + "");
   if (portNumber.length == 0) {
     return true;
   }
@@ -171,7 +165,6 @@ const IpAddressEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, set
   )
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
 interface ToolbarProps {
   onRecvReport: (report: MessageReport) => void;
   setConfigPanelVisible: React.Dispatch<React.SetStateAction<boolean>>;
@@ -188,17 +181,12 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   async function webSocketStart() {
     if (!wsStarted) {
       info("webSocketStart");
-      // WebSocket server is now started automatically when the application starts
-      // await invoke("start_websocket");
       setWsStarted(true);
     }
   }
 
   async function webSocketAttach() {
     setConnectionStatus('connecting');
-    
-    if (!socketRef.current) {
-    }
     const wsAddr = 'ws://localhost:8080';
     info("Create WebSocket to." + wsAddr);
     const ws = new WebSocket(wsAddr);
@@ -227,25 +215,18 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
 
     ws.onmessage = function (event) {
       try {
-        // Parse WebSocket message
         const wsMessage = JSON.parse(event.data);
-        
-        // Check message type and handle accordingly
         if (wsMessage.event === "msg_updated") {
-          // Handle message update event
           const report: MessageReport = wsMessage.data as MessageReport;
           onRecvReport(report);
         }
         else if (wsMessage.event === "bc_monitor_started") {
-          // Handle BC monitor start event
           info("bc_monitor_started: " + JSON.stringify(wsMessage.data));
         }
         else if (wsMessage.event === "bc_monitor_stopped") {
-          // Handle BC monitor stop event
           info("bc_monitor_stopped: " + JSON.stringify(wsMessage.data));
         }
         else if (wsMessage.event === "ws_started") {
-          // Handle WebSocket server start event
           info("ws_started: " + JSON.stringify(wsMessage.data));
         }
       } catch (error) {
@@ -333,7 +314,7 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
         
         <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
         
-        {/* ����״ָ̬ʾ�� */}
+        {/* 连接状态指示器 */}
         <Chip
           icon={
             connectionStatus === 'connected' ? <CheckCircleIcon /> : 
@@ -382,8 +363,6 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
     </Paper>
   );
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 enum FilterType {
   MessageId = 0,
@@ -459,109 +438,151 @@ const ConfigPanel = ({ isVisible, onChange }: ConfigPanelProps) => {
       <Paper 
         elevation={1} 
         sx={{ 
-          p: 2, 
+          p: 2.5, 
           mb: 2,
           borderRadius: 2,
         }}
       >
-        <Stack
-          direction="row"
-          divider={<Divider orientation="vertical" flexItem />}
-          spacing={3}
-          flexWrap="wrap"
-        >
-          <Box sx={{ minWidth: 200 }}>
-            <FormLabel id="radiogroupslect" sx={{ mb: 1, display: 'block' }}>
-              Filter Type
-            </FormLabel>
-            <RadioGroup
-              defaultValue="msgId"
-              name="filter-type-group"
-              onChange={handleFilterTypeChange}
-            >
-              <FormControlLabel value="msgId" control={<Radio />} label="Message ID" />
-              <FormControlLabel value="srcId" control={<Radio />} label="Sender" />
-              <FormControlLabel value="tarId" control={<Radio />} label="Receiver" />
-            </RadioGroup>
+        <Stack spacing={2.5}>
+          {/* 标题区域 */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+            <FilterListIcon color="primary" />
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Filter Configuration
+            </Typography>
           </Box>
           
-          <Box sx={{ flex: 1, minWidth: 200 }}>
-            <Stack spacing={2}>
-              <Box sx={{ display: msgFilterVisible ? 'block' : 'none' }}>
-                <TextField 
-                  fullWidth
-                  label="Message ID" 
-                  variant="outlined" 
-                  value={msgFilterData} 
-                  onChange={handleFilterDataChange} 
-                  name="msgId"
-                  size="small"
-                />
+          {/* 主要内容区域 */}
+          <Grid container spacing={3}>
+            {/* 左侧：过滤类型选择 */}
+            <Grid size={{ xs: 12, sm: 12, md: 4 }}>
+              <Box sx={{ 
+                p: 2, 
+                bgcolor: 'action.hover', 
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider'
+              }}>
+                <FormLabel 
+                  id="radiogroupslect" 
+                  sx={{ 
+                    mb: 2, 
+                    display: 'block',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    color: 'text.primary'
+                  }}
+                >
+                  Filter Type
+                </FormLabel>
+                <RadioGroup
+                  defaultValue="msgId"
+                  name="filter-type-group"
+                  onChange={handleFilterTypeChange}
+                  sx={{ gap: 1 }}
+                >
+                  <FormControlLabel 
+                    value="msgId" 
+                    control={<Radio size="small" />} 
+                    label={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <MessageIcon fontSize="small" color="action" />
+                        <Typography variant="body2">Message ID</Typography>
+                      </Box>
+                    }
+                    sx={{ m: 0 }}
+                  />
+                  <FormControlLabel 
+                    value="srcId" 
+                    control={<Radio size="small" />} 
+                    label={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <PersonIcon fontSize="small" color="action" />
+                        <Typography variant="body2">Sender</Typography>
+                      </Box>
+                    }
+                    sx={{ m: 0 }}
+                  />
+                  <FormControlLabel 
+                    value="tarId" 
+                    control={<Radio size="small" />} 
+                    label={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <PersonOutlineIcon fontSize="small" color="action" />
+                        <Typography variant="body2">Receiver</Typography>
+                      </Box>
+                    }
+                    sx={{ m: 0 }}
+                  />
+                </RadioGroup>
               </Box>
-              <Box sx={{ display: srcFilterVisible ? 'block' : 'none' }}>
-                <TextField 
-                  fullWidth
-                  label="Sender" 
-                  variant="outlined" 
-                  value={srcFilterData} 
-                  onChange={handleFilterDataChange} 
-                  name="srcId"
-                  size="small"
-                />
+            </Grid>
+            
+            {/* 右侧：过滤值输入 */}
+            <Grid size={{ xs: 12, sm: 12, md: 8 }}>
+              <Box sx={{ 
+                p: 2,
+                bgcolor: 'background.paper',
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                minHeight: '100%',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                <Box sx={{ width: '100%' }}>
+                  <Box sx={{ display: msgFilterVisible ? 'block' : 'none' }}>
+                    <TextField 
+                      fullWidth
+                      label="Message ID Filter" 
+                      variant="outlined" 
+                      value={msgFilterData} 
+                      onChange={handleFilterDataChange} 
+                      name="msgId"
+                      size="small"
+                      placeholder="Enter message ID to filter"
+                      helperText="Filter messages by their ID"
+                    />
+                  </Box>
+                  <Box sx={{ display: srcFilterVisible ? 'block' : 'none' }}>
+                    <TextField 
+                      fullWidth
+                      label="Sender Filter" 
+                      variant="outlined" 
+                      value={srcFilterData} 
+                      onChange={handleFilterDataChange} 
+                      name="srcId"
+                      size="small"
+                      placeholder="Enter sender ID to filter"
+                      helperText="Filter messages by sender ID"
+                    />
+                  </Box>
+                  <Box sx={{ display: tarFilterVisible ? 'block' : 'none' }}>
+                    <TextField 
+                      fullWidth
+                      label="Receiver Filter" 
+                      variant="outlined" 
+                      value={tarFilterData} 
+                      onChange={handleFilterDataChange} 
+                      name="tarId"
+                      size="small"
+                      placeholder="Enter receiver ID to filter"
+                      helperText="Filter messages by receiver ID"
+                    />
+                  </Box>
+                </Box>
               </Box>
-              <Box sx={{ display: tarFilterVisible ? 'block' : 'none' }}>
-                <TextField 
-                  fullWidth
-                  label="Receiver" 
-                  variant="outlined" 
-                  value={tarFilterData} 
-                  onChange={handleFilterDataChange} 
-                  name="tarId"
-                  size="small"
-                />
-              </Box>
-            </Stack>
-          </Box>
+            </Grid>
+          </Grid>
         </Stack>
       </Paper>
     </Collapse>
   );
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
 interface MessageReportProps {
   reports: MessageReport[];
 }
-
-// const MessageTable = ({ reports }: MessageReportProps) => {
-//   return (
-//     <div className="message-table-container">
-//       <table className="message-table">
-//         <thead>
-//           <tr>
-//             <th className="col1">DateTime</th>
-//             <th className="col2">MessageID</th>
-//             <th className="col3">Sender</th>
-//             <th className="col4">Receiver</th>
-//             <th className="col5">Payload</th>
-//           </tr>
-//         </thead>
-//         <tbody>
-//           {reports.map((report, index) => (
-//             <tr key={index}>
-//               <td className="col1">{report.datetime}</td>
-//               <td className="col2">{report.messageId}</td>
-//               <td className="col3">{report.sender}</td>
-//               <td className="col4">{report.receiver}</td>
-//               <td className="col5">{report.payload}</td>
-//             </tr>
-//           ))}
-//         </tbody>
-//       </table>
-//     </div>
-//   )
-// }
 
 const columns: GridColDef[] = [
   {
@@ -602,81 +623,90 @@ const columns: GridColDef[] = [
     minWidth: 200,
   },
 ];
-// interface TreeNode {
-//   id: string;
-//   label: string;
-//   children?: TreeNode[];
-// }
+interface TreeNode {
+  id: string;
+  label: string;
+  children?: TreeNode[];
+}
 
-// const buildMessageTree = (report: MessageReport): TreeNode => {
-//   const root: TreeNode = {
-//     id: 'root',
-//     label: 'Message',
-//     children: [
-//       {
-//         id: 'datetime',
-//         label: `Time: ${report.datetime}`
-//       },
-//       {
-//         id: 'messageId', 
-//         label: `Message ID: ${report.messageId}`
-//       },
-//       {
-//         id: 'sender',
-//         label: `Sender: ${report.sender}`
-//       },
-//       {
-//         id: 'receiver',
-//         label: `Receiver: ${report.receiver}`
-//       }
-//     ]
-//   };
-//
-//   // Split payload into bytes and create nodes
-//   if (report.payload) {
-//     const bytes = report.payload.split(' ');
-//     const payloadNode: TreeNode = {
-//       id: 'payload',
-//       label: 'Payload',
-//       children: bytes.map((byte, index) => ({
-//         id: `byte-${index}`,
-//         label: `Byte ${index}: ${byte}`
-//       }))
-//     };
-//     root.children?.push(payloadNode);
-//   }
-//
-//   return root;
-// };
+const buildMessageTree = (report: MessageReport): TreeNode => {
+  const root: TreeNode = {
+    id: 'root',
+    label: 'Message',
+    children: [
+      {
+        id: 'datetime',
+        label: `Time: ${report.datetime}`
+      },
+      {
+        id: 'messageId', 
+        label: `Message ID: ${report.messageId}`
+      },
+      {
+        id: 'sender',
+        label: `Sender: ${report.sender}`
+      },
+      {
+        id: 'receiver',
+        label: `Receiver: ${report.receiver}`
+      }
+    ]
+  };
 
-// const MessageTreeView = ({report}: {report: MessageReport}) => {
-//   const tree = buildMessageTree(report);
-//   
-//   return (
-//     <SimpleTreeView
-//       aria-label="message tree"
-//       defaultExpandedItems={['root']}
-//     >
-//       {tree.children?.map((node) => (
-//         <TreeItem 
-//           key={node.id}
-//           itemId={node.id}
-//           label={node.label}
-//         >
-//           {node.children?.map((child) => (
-//             <TreeItem
-//               key={child.id} 
-//               itemId={child.id}
-//               label={child.label}
-//             />
-//           ))}
-//         </TreeItem>
-//       ))}
-//     </SimpleTreeView>
-//   );
-// };
+  if (report.payload) {
+    const bytes = report.payload.split(' ');
+    const payloadNode: TreeNode = {
+      id: 'payload',
+      label: 'Payload',
+      children: bytes.map((byte, index) => ({
+        id: `byte-${index}`,
+        label: `Byte ${index}: ${byte}`
+      }))
+    };
+    root.children?.push(payloadNode);
+  }
 
-const MessageGrid = ({ reports } : MessageReportProps) => {
+  return root;
+};
+
+const MessageTreeView = ({report}: {report: MessageReport}) => {
+  const tree = buildMessageTree(report);
+  
+  return (
+    <Paper elevation={1} sx={{ height: '100%', borderRadius: 2, p: 2, overflow: 'auto' }}>
+      <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+        Message Details
+      </Typography>
+      <SimpleTreeView
+        aria-label="message tree"
+        defaultExpandedItems={['root', 'payload']}
+      >
+        {tree.children?.map((node) => (
+          <TreeItem 
+            key={node.id}
+            itemId={node.id}
+            label={node.label}
+          >
+            {node.children?.map((child) => (
+              <TreeItem
+                key={child.id} 
+                itemId={child.id}
+                label={child.label}
+              />
+            ))}
+          </TreeItem>
+        ))}
+      </SimpleTreeView>
+    </Paper>
+  );
+};
+
+interface MessageGridProps extends MessageReportProps {
+  onRowSelectionChange?: (selectedRowId: number | null) => void;
+  selectedRowId?: number | null;
+}
+
+const MessageGrid = ({ reports, onRowSelectionChange, selectedRowId }: MessageGridProps) => {
   if (reports.length === 0) {
     return (
       <Paper 
@@ -701,37 +731,95 @@ const MessageGrid = ({ reports } : MessageReportProps) => {
     );
   }
 
+  const handleRowSelectionModelChange = (newSelection: GridRowSelectionModel, _details: GridCallbackDetails<any>) => {
+    if (onRowSelectionChange) {
+      const selectedId = newSelection.length > 0 ? newSelection[0] as number : null;
+      onRowSelectionChange(selectedId);
+    }
+  };
+
   return (
-    <Paper elevation={1} sx={{ height: '100%', borderRadius: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <DataGrid
-        rows={reports.map((report, index) => (
-          { 
-            id: index, 
-            ts: report.datetime, 
-            msgId: report.messageId, 
-            sender: report.sender, 
-            receiver: report.receiver, 
-            payload: report.payload 
-          }
-        ))}
-        columns={columns} 
-        columnVisibilityModel={{
-          id: false,
-        }}
-        pageSizeOptions={[25, 50, 100]}
-        initialState={{
-          pagination: {
-            paginationModel: { pageSize: 50 },
-          },
-        }}
-        sx={{
-          border: 'none',
-          flex: 1,
-          '& .MuiDataGrid-cell:focus': {
-            outline: 'none',
-          },
-        }}
-      />
+    <Paper elevation={1} sx={{ height: '100%', maxHeight: '100%', borderRadius: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', height: '100%', maxHeight: '100%' }}>
+        <DataGrid
+          rows={reports.map((report, index) => (
+            { 
+              id: index, 
+              ts: report.datetime, 
+              msgId: report.messageId, 
+              sender: report.sender, 
+              receiver: report.receiver, 
+              payload: report.payload 
+            }
+          ))}
+          columns={columns} 
+          columnVisibilityModel={{
+            id: false,
+          }}
+          pageSizeOptions={[25, 50, 100]}
+          initialState={{
+            pagination: {
+              paginationModel: { pageSize: 50 },
+            },
+          }}
+          rowSelectionModel={selectedRowId !== null && selectedRowId !== undefined ? [selectedRowId] : []}
+          onRowSelectionModelChange={handleRowSelectionModelChange}
+          checkboxSelection={false}
+          disableRowSelectionOnClick={false}
+          autoHeight={false}
+          sx={{
+            border: 'none',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            '& .MuiDataGrid-root': {
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+            },
+            '& .MuiDataGrid-main': {
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            },
+            '& .MuiDataGrid-container--top [role="row"]': {
+              display: 'flex',
+            },
+            '& .MuiDataGrid-cell:focus': {
+              outline: 'none',
+            },
+            '& .MuiDataGrid-row:hover': {
+              cursor: 'pointer',
+            },
+            '& .MuiDataGrid-virtualScroller': {
+              overflowY: 'auto !important',
+              overflowX: 'auto',
+              flex: 1,
+              '&::-webkit-scrollbar': {
+                width: '8px',
+                height: '8px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                borderRadius: '4px',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '4px',
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                },
+              },
+            },
+            '& .MuiDataGrid-footerContainer': {
+              borderTop: '1px solid rgba(224, 224, 224, 1)',
+              minHeight: '52px',
+              flexShrink: 0,
+            },
+          }}
+        />
+      </Box>
     </Paper>
   )
 }
@@ -739,6 +827,7 @@ const MessageGrid = ({ reports } : MessageReportProps) => {
 const App = () => {
   const [reports, setReports] = useState<MessageReport[]>([]);
   const [configPanelVisible, setConfigPanelVisible] = useState(true);
+  const [selectedRowId, setSelectedRowId] = useState<number | null>(null);
 
   const [filter, setFilter] = useState<FilterProps>({ filterType: FilterType.MessageId, filterData: '' });
 
@@ -749,23 +838,16 @@ const App = () => {
   forwardConsole("error", error);
 
   const insertReport = (report: MessageReport) => {
-    // info("Recv:[" + report.datetime + "][" + report.sender + "=>" + report.receiver + "][" + report.messageId + "]:" + report.payload);
-    // if (reports.length >= 1000) {
-    //   const updatedReports = [...reports.slice(1), report];
-    //   setReports(updatedReports);
-    // } else {
-    //   setReports((prevReports) => [...prevReports, report]);
-    // }
-
     if (reports.length >= 1000) {
       reports.shift();
-    };
+    }
     reports.push(report);
     setReports([...reports]);
   };
 
   const onFilterChange = (filterProps: FilterProps) => {
     setFilter(filterProps);
+    setSelectedRowId(null);
     info("Filter changed: " + filterProps.filterType + " " + filterProps.filterData);
   };
 
@@ -785,18 +867,93 @@ const App = () => {
   return (
     <ThemeProvider theme={lightTheme}>
       <CssBaseline />
-      <Box sx={{ height: '100vh', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Container maxWidth={false} sx={{ py: 2, px: 2, height: '100%', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-          <Stack spacing={2} sx={{ flex: 1, overflow: 'hidden', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ height: '100vh', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+        <Box 
+          sx={{ 
+            py: 2, 
+            px: 2, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            flex: 1, 
+            overflow: 'hidden', 
+            minHeight: 0,
+            height: '100%',
+            maxHeight: '100%',
+          }}
+        >
+          <Stack 
+            spacing={2} 
+            sx={{ 
+              flex: 1, 
+              overflow: 'hidden', 
+              minHeight: 0, 
+              display: 'flex', 
+              flexDirection: 'column',
+              height: '100%',
+              maxHeight: '100%',
+            }}
+          >
             {/* toolbar */}
-            <Toolbar onRecvReport={insertReport} setConfigPanelVisible={setConfigPanelVisible} />
-            <ConfigPanel isVisible={configPanelVisible} onChange={onFilterChange} />
+            <Box sx={{ flexShrink: 0 }}>
+              <Toolbar onRecvReport={insertReport} setConfigPanelVisible={setConfigPanelVisible} />
+            </Box>
+            <Box sx={{ flexShrink: 0 }}>
+              <ConfigPanel isVisible={configPanelVisible} onChange={onFilterChange} />
+            </Box>
             {/* message display */}
-            <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              <MessageGrid reports={reports.filter(FilterFunc)} />
+            <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
+              <Grid 
+                container 
+                spacing={2} 
+                sx={{ 
+                  flex: 1, 
+                  overflow: 'hidden', 
+                  minHeight: 0,
+                  display: 'flex',
+                  height: '100%',
+                  maxHeight: '100%',
+                  m: 0,
+                  width: '100%',
+                }}
+              >
+                <Grid 
+                  size={selectedRowId !== null ? 7 : 12} 
+                  sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    height: '100%',
+                    maxHeight: '100%',
+                    p: 0,
+                  }}
+                >
+                  <MessageGrid 
+                    reports={reports.filter(FilterFunc)} 
+                    onRowSelectionChange={setSelectedRowId}
+                    selectedRowId={selectedRowId}
+                  />
+                </Grid>
+                {selectedRowId !== null && selectedRowId < reports.filter(FilterFunc).length && (
+                  <Grid 
+                    size={5} 
+                    sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      minHeight: 0,
+                      overflow: 'hidden',
+                      height: '100%',
+                      maxHeight: '100%',
+                      p: 0,
+                    }}
+                  >
+                    <MessageTreeView report={reports.filter(FilterFunc)[selectedRowId]} />
+                  </Grid>
+                )}
+              </Grid>
             </Box>
           </Stack>
-        </Container>
+        </Box>
       </Box>
     </ThemeProvider>
   );
