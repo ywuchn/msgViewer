@@ -28,6 +28,7 @@ export const lightTheme = createTheme({
   },
   spacing: 8,
   components: {
+    // @ts-expect-error - MuiDataGrid is from @mui/x-data-grid, not @mui/material
     MuiDataGrid: {
       styleOverrides: {
         root: {
@@ -91,6 +92,7 @@ export const darkTheme = createTheme({
   },
   spacing: 8,
   components: {
+    // @ts-expect-error - MuiDataGrid is from @mui/x-data-grid, not @mui/material
     MuiDataGrid: {
       styleOverrides: {
         root: {
