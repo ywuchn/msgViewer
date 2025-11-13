@@ -7,10 +7,20 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crate::{
     models::{MessageReport, SockErrCode, MsgHeader, BcMessage, MAX_MESSAGE_LEN, MSG_HEADER_LEN, START_FLAG, END_FLAG, START_FLAG_LEN, END_FLAG_LEN, CRC_LEN},
     utils::{get_node_name, get_msg_name},
-    US_PER_SEC
+    US_PER_SEC,
+    config::MAX_DISPLAY_PAYLOAD_LENGTH,
 };
 
 /// Read data from TCP stream
+/// This function reads exactly `len` bytes from the provided TCP stream.
+/// 
+/// Parameters:
+/// - stream: The TCP stream to read from
+/// - len: The number of bytes to read
+/// 
+/// Returns:
+/// - Ok(Vec<u8>): The bytes read from the stream
+/// - Err(SockErrCode): An error occurred during reading
 pub async fn read_data(stream: &mut tokio::net::TcpStream, len: usize) -> Result<Vec<u8>, SockErrCode> {
     // Boundary condition optimization: if len is 0, return empty Vec directly
     if len == 0 {
@@ -21,7 +31,7 @@ pub async fn read_data(stream: &mut tokio::net::TcpStream, len: usize) -> Result
 
     match AsyncReadExt::read_exact(stream, &mut buf).await {
         Ok(_) => {
-            // log::info!("Read {} bytes", len);
+            log::trace!("Successfully read {} bytes", len);
             Ok(buf)
         }
         Err(e) => {
@@ -37,11 +47,30 @@ pub async fn read_data(stream: &mut tokio::net::TcpStream, len: usize) -> Result
 }
 
 /// Read packet from TCP stream
+/// This function reads and parses a complete message packet from the TCP stream.
 /// Message structure: start_flag(0x1E) + header + payload + crc(2 bytes) + end_flag(0xE1)
-/// Returns complete BcMessage structure with all parts
+/// 
+/// The function works as follows:
+/// 1. Searches for the start flag (0x1E) byte by byte
+/// 2. Reads the message header
+/// 3. Validates the message length
+/// 4. Reads the payload
+/// 5. Reads and (in the future) verifies the CRC
+/// 6. Verifies the end flag (0xE1)
+/// 7. Returns a complete BcMessage structure
+/// 
+/// Parameters:
+/// - stream: The TCP stream to read from
+/// 
+/// Returns:
+/// - Ok(BcMessage): A complete parsed message
+/// - Err(SockErrCode): An error occurred during reading or parsing
 pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage, SockErrCode> {
+    let mut packet_count = 0;
 
     loop {
+        packet_count += 1;
+        
         // Step 1: Find start flag by reading one byte at a time
         loop {
             let mut byte_buf = [0u8; 1];
@@ -68,7 +97,7 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
         // Step 2: Read header (after start flag)
         let header_bytes = match read_data(stream, MSG_HEADER_LEN).await {
             Ok(data) => data,
-            Err(e) => return Err(e),
+            Err(e) => { return Err(e); }
         };
 
         // Step 3: Parse header
@@ -100,13 +129,13 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
         // Step 6: Read payload
         let payload = match read_data(stream, payload_len).await {
             Ok(data) => data,
-            Err(e) => return Err(e),
+            Err(e) => { return Err(e); }
         };
         
         // Step 7: Read and verify CRC (2 bytes)
         let crc_bytes = match read_data(stream, CRC_LEN).await {
             Ok(data) => data,
-            Err(e) => return Err(e),
+            Err(e) => { return Err(e); }
         };
         // Convert CRC bytes to u16 (little endian)
         let mut crc_cursor = Cursor::new(&crc_bytes);
@@ -116,7 +145,7 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
         // Step 8: Read and verify end flag (1 byte)
         let end_flag_data = match read_data(stream, END_FLAG_LEN).await {
             Ok(data) => data,
-            Err(e) => return Err(e),
+            Err(e) => { return Err(e); }
         };
         
         if end_flag_data[0] != END_FLAG {
@@ -124,6 +153,8 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
             // Continue searching for next start flag
             continue;
         }
+
+        log::trace!("Successfully parsed packet #{} with message ID: {:04X}", packet_count, header.msg_id);
 
         // Step 9: Return complete BcMessage
         return Ok(BcMessage {
@@ -137,10 +168,21 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
 }
 
 /// Handle incoming message
-/// Takes complete BcMessage structure
-pub async fn handle_message<F>(message: BcMessage, message_handler: F) 
+/// This function processes a complete BcMessage and converts it into a MessageReport:
+/// 1. Extracts and validates the timestamp from the message header
+/// 2. Converts node IDs to human-readable names
+/// 3. Converts message ID to a human-readable name
+/// 4. Processes the payload data (with length limiting for display)
+/// 5. Creates a MessageReport with all the processed information
+/// 6. Passes the MessageReport to the provided message_handler (async)
+/// 
+/// Parameters:
+/// - message: The complete BcMessage to process
+/// - message_handler: An async function that will be called with the resulting MessageReport
+pub async fn handle_message<F, Fut>(message: BcMessage, message_handler: F) 
 where 
-    F: FnOnce(MessageReport),
+    F: FnOnce(MessageReport) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send,
 {
     let header = message.header;
     let payload = message.payload;
@@ -163,14 +205,27 @@ where
 
     // Optimize payload processing: use pre-allocated String and write! macro
     let payload_str = {
-        let mut result = String::with_capacity(payload.len() * 3); // Estimate capacity
-        for (i, byte) in payload.iter().enumerate() {
+        // For large payloads, we might want to limit the display
+        let display_payload = if payload.len() > MAX_DISPLAY_PAYLOAD_LENGTH {
+            &payload[..MAX_DISPLAY_PAYLOAD_LENGTH]
+        } else {
+            &payload
+        };
+        
+        let mut result = String::with_capacity(display_payload.len() * 3); // Estimate capacity
+        for (i, byte) in display_payload.iter().enumerate() {
             if i > 0 {
                 result.push(' ');
             }
             use std::fmt::Write;
             write!(result, "{:02X}", byte).unwrap(); // Use write! macro for better efficiency
         }
+        
+        // If we truncated the payload, add an indicator
+        if payload.len() > MAX_DISPLAY_PAYLOAD_LENGTH {
+            result.push_str(" ...");
+        }
+        
         result
     };
 
@@ -191,5 +246,5 @@ where
     //     msg_report.payload
     // );
 
-    message_handler(msg_report);
+    message_handler(msg_report).await;
 }

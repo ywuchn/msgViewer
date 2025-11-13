@@ -11,6 +11,7 @@ pub mod utils;
 pub mod websocket;
 pub mod bc_comm;
 pub mod app_state;
+pub mod config;
 
 use models::MessageReport;
 use websocket::WebSocketServer;
@@ -42,6 +43,15 @@ pub const US_PER_SEC: u64 = 1000000;
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Main entry point for the Tauri application
+/// This function initializes and starts the application:
+/// 1. Sets up the WebSocket server to automatically start when the application launches
+/// 2. Configures window event handlers to properly clean up resources when the window is closed
+/// 3. Initializes plugins for logging, dialogs, and opening external links
+/// 4. Starts the Tauri runtime
+/// 
+/// The function handles errors during startup and ensures proper cleanup of resources
+/// when the application exits.
 pub fn run() {
     // Initialize the WebSocket server when the application starts
     tauri::Builder::default()
