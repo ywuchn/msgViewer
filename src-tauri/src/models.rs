@@ -86,3 +86,10 @@ pub enum SockErrCode {
     SockDisconnected,
     SockError,
 }
+
+/// Error type for message parsing operations
+#[derive(Debug)]
+pub enum MessageParseError {
+    /// Invalid timestamp in message header
+    InvalidTimestamp { ts_sec: u32, ts_us: u32 },
+}

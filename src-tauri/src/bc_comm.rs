@@ -167,23 +167,21 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
     }
 }
 
-/// Handle incoming message
+/// Parse a BcMessage into a MessageReport
 /// This function processes a complete BcMessage and converts it into a MessageReport:
 /// 1. Extracts and validates the timestamp from the message header
 /// 2. Converts node IDs to human-readable names
 /// 3. Converts message ID to a human-readable name
 /// 4. Processes the payload data (with length limiting for display)
-/// 5. Creates a MessageReport with all the processed information
-/// 6. Passes the MessageReport to the provided message_handler (async)
+/// 5. Creates and returns a MessageReport with all the processed information
 /// 
 /// Parameters:
 /// - message: The complete BcMessage to process
-/// - message_handler: An async function that will be called with the resulting MessageReport
-pub async fn handle_message<F, Fut>(message: BcMessage, message_handler: F) 
-where 
-    F: FnOnce(MessageReport) -> Fut,
-    Fut: std::future::Future<Output = ()> + Send,
-{
+/// 
+/// Returns:
+/// - Ok(MessageReport): Successfully parsed message report
+/// - Err(MessageParseError): Error occurred during parsing
+pub fn parse_message_to_report(message: BcMessage) -> Result<MessageReport, crate::models::MessageParseError> {
     let header = message.header;
     let payload = message.payload;
 
@@ -195,7 +193,7 @@ where
         Some(duration) => chrono::DateTime::<chrono::Utc>::from(duration),
         None => {
             log::warn!("Invalid timestamp: {} seconds, {} microseconds", ts_sec, ts_us);
-            return;
+            return Err(crate::models::MessageParseError::InvalidTimestamp { ts_sec, ts_us });
         }
     };
 
@@ -246,5 +244,5 @@ where
     //     msg_report.payload
     // );
 
-    message_handler(msg_report).await;
+    Ok(msg_report)
 }

@@ -9,7 +9,7 @@ use tauri::Emitter;
 use crate::{
     models::{MessageReport, FrontEndCommand},
     app_state::{get_app_handle, get_ws_running, set_ws_running, get_bc_comm_running, set_bc_comm_running},
-    bc_comm::{handle_message, read_packet},
+    bc_comm::{parse_message_to_report, read_packet},
     config::{DEFAULT_WEBSOCKET_ADDR, DEFAULT_CHANNEL_BUFFER_SIZE, DEFAULT_NETWORK_TIMEOUT_MS},
 };
 
@@ -71,8 +71,14 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
                             }
                             set_bc_comm_running(true);
 
+                            // Spawn the communication task instead of awaiting it
+                            // This allows the frontend_communication loop to continue processing commands
                             let sink = std::sync::Arc::clone(&sink);
-                            start_comm_with_bc(sink, cmd.content).await;
+                            tokio::spawn(async move {
+                                start_comm_with_bc(sink, cmd.content).await;
+                                // Ensure state is reset when communication stops
+                                set_bc_comm_running(false);
+                            });
                         }
                         // Stop receiving messages from BC device
                         "stop_recv" => {
@@ -235,15 +241,18 @@ async fn bc_communication_task(
                     match read_packet(&mut stream).await {
                         // Successfully read and parsed a message
                         Ok(message) => {
-                            let tx_cloned = tx.clone();
-                            // Create an async message handler that sends the parsed message report through the channel
-                            // No need for tokio::spawn since handle_message now supports async handlers
-                            let msg_handler = move |msg_report: MessageReport| async move {
-                                if let Err(e) = tx_cloned.send(msg_report).await {
-                                    log::error!("Failed to send message report: {}", e);
+                            // Parse message to report (no handler needed, direct result)
+                            match parse_message_to_report(message) {
+                                Ok(msg_report) => {
+                                    // Send directly to channel, no closure overhead
+                                    if let Err(e) = tx.send(msg_report).await {
+                                        log::error!("Failed to send message report: {}", e);
+                                    }
                                 }
-                            };
-                            handle_message(message, msg_handler).await;
+                                Err(e) => {
+                                    log::warn!("Failed to parse message: {:?}", e);
+                                }
+                            }
                         }
                         // Error occurred while reading a message
                         Err(e) => match e {
@@ -364,6 +373,9 @@ impl WebSocketServer {
     /// 4. Enters a loop to accept incoming connections
     /// 5. Spawns a new task for each connection to handle frontend communication
     /// 
+    /// Note: This function will block until the server is stopped (via get_ws_running()).
+    /// It should be called from within an async runtime (e.g., tauri::async_runtime::spawn).
+    /// 
     /// Parameters:
     /// - _msg_handler: A callback function for handling MessageReport objects
     ///   (currently unused but kept for potential future use)
@@ -377,76 +389,75 @@ impl WebSocketServer {
         // Set the WebSocket server running flag
         set_ws_running(true);
         
-        // Spawn a new task for the WebSocket server
-        tokio::spawn(async move {
-            // Get the configured WebSocket address
-            let addr = DEFAULT_WEBSOCKET_ADDR.to_string();
-            
-            // Bind the TCP listener to the address
-            let listener = match tokio::net::TcpListener::bind(addr.clone()).await {
-                Ok(listener) => listener,
-                Err(e) => {
-                    log::error!("Failed to bind WebSocket server to {}: {}", addr, e);
-                    // Reset the running flag on error
-                    set_ws_running(false);
-                    return;
-                }
-            };
+        // Get the configured WebSocket address
+        let addr = DEFAULT_WEBSOCKET_ADDR.to_string();
+        
+        // Bind the TCP listener to the address
+        let listener = match tokio::net::TcpListener::bind(addr.clone()).await {
+            Ok(listener) => listener,
+            Err(e) => {
+                log::error!("Failed to bind WebSocket server to {}: {}", addr, e);
+                // Reset the running flag on error
+                set_ws_running(false);
+                return;
+            }
+        };
 
-            log::info!("Start WebSocket server and listening on ws://{}", addr);
+        log::info!("Start WebSocket server and listening on ws://{}", addr);
 
-            // Emit a "ws_started" event to notify the frontend
-            if let Some(handle) = get_app_handle() {
-                if let Err(e) = handle.emit("ws_started", addr.clone()) {
-                    log::warn!("Failed to emit 'ws_started' event: {}", e);
-                }
+        // Emit a "ws_started" event to notify the frontend
+        if let Some(handle) = get_app_handle() {
+            if let Err(e) = handle.emit("ws_started", addr.clone()) {
+                log::warn!("Failed to emit 'ws_started' event: {}", e);
+            }
+        }
+
+        // Main server loop to accept incoming connections
+        // This loop will run until get_ws_running() returns false
+        loop {
+            // Check if the WebSocket server should stop
+            if !get_ws_running() {
+                log::info!("WebSocket server is shutting down.");
+                break;
             }
 
-            // Main server loop to accept incoming connections
-            loop {
-                // Check if the WebSocket server should stop
-                if !get_ws_running() {
-                    log::info!("WebSocket server is shutting down.");
-                    break;
-                }
-
-                // Attempt to accept a new connection with a timeout
-                match tokio::time::timeout(
-                    tokio::time::Duration::from_millis(DEFAULT_NETWORK_TIMEOUT_MS),
-                    listener.accept()
-                )
-                .await
-                {
-                    // Successfully accepted a new connection
-                    Ok(Ok((stream, addr))) => {
-                        log::info!("New connection from {}", addr);
-                        
-                        // Attempt to upgrade the connection to a WebSocket with a timeout
-                        match tokio::time::timeout(
-                            tokio::time::Duration::from_millis(DEFAULT_NETWORK_TIMEOUT_MS),
-                            tokio_tungstenite::accept_async(stream),
-                        )
-                        .await
-                        {
-                            // Successfully upgraded to WebSocket
-                            Ok(Ok(ws_stream)) => {
-                                // Spawn a new task to handle communication with this client
-                                tokio::spawn(async move {
-                                    frontend_communication(ws_stream).await;
-                                });
-                            }
-                            // WebSocket handshake failed
-                            Ok(Err(e)) => log::warn!("WebSocket handshake failed: {}", e),
-                            // WebSocket handshake timed out
-                            Err(_) => log::debug!("WebSocket handshake timed out"),
+            // Attempt to accept a new connection with a timeout
+            match tokio::time::timeout(
+                tokio::time::Duration::from_millis(DEFAULT_NETWORK_TIMEOUT_MS),
+                listener.accept()
+            )
+            .await
+            {
+                // Successfully accepted a new connection
+                Ok(Ok((stream, addr))) => {
+                    log::info!("New connection from {}", addr);
+                    
+                    // Attempt to upgrade the connection to a WebSocket with a timeout
+                    match tokio::time::timeout(
+                        tokio::time::Duration::from_millis(DEFAULT_NETWORK_TIMEOUT_MS),
+                        tokio_tungstenite::accept_async(stream),
+                    )
+                    .await
+                    {
+                        // Successfully upgraded to WebSocket
+                        Ok(Ok(ws_stream)) => {
+                            // Spawn a new task to handle communication with this client
+                            // This is necessary to support concurrent connections
+                            tokio::spawn(async move {
+                                frontend_communication(ws_stream).await;
+                            });
                         }
+                        // WebSocket handshake failed
+                        Ok(Err(e)) => log::warn!("WebSocket handshake failed: {}", e),
+                        // WebSocket handshake timed out
+                        Err(_) => log::debug!("WebSocket handshake timed out"),
                     }
-                    // Error occurred while accepting connection
-                    Ok(Err(e)) => log::warn!("Error accepting connection: {}", e),
-                    // Timeout occurred while waiting for a connection
-                    Err(_) => log::debug!("Connection accept timed out"),
                 }
+                // Error occurred while accepting connection
+                Ok(Err(e)) => log::warn!("Error accepting connection: {}", e),
+                // Timeout occurred while waiting for a connection
+                Err(_) => log::debug!("Connection accept timed out"),
             }
-        });
+        }
     }
 }
