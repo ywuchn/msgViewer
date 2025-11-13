@@ -19,9 +19,12 @@ type WebSocketSink = dyn futures_util::sink::Sink<tokio_tungstenite::tungstenite
 /// Handle frontend communication
 /// This function manages the WebSocket connection with the frontend:
 /// 1. Splits the WebSocket stream into sink and stream components
-/// 2. Listens for commands from the frontend
+/// 2. Listens for commands from the frontend in a non-blocking loop
 /// 3. Processes commands such as "start_recv" and "stop_recv"
-/// 4. Starts/stops BC communication based on frontend commands
+/// 4. Spawns BC communication tasks (non-blocking) to allow immediate response to stop commands
+/// 
+/// Note: The communication loop must remain non-blocking to ensure stop commands
+/// can be processed immediately, even when BC communication is active.
 /// 
 /// Parameters:
 /// - stream: WebSocket stream for communication with the frontend
@@ -72,11 +75,13 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
                             set_bc_comm_running(true);
 
                             // Spawn the communication task instead of awaiting it
-                            // This allows the frontend_communication loop to continue processing commands
+                            // This is necessary because start_comm_with_bc blocks until communication stops.
+                            // By spawning it, the frontend_communication loop can continue processing
+                            // commands (especially stop_recv) without being blocked.
                             let sink = std::sync::Arc::clone(&sink);
                             tokio::spawn(async move {
                                 start_comm_with_bc(sink, cmd.content).await;
-                                // Ensure state is reset when communication stops
+                                // Ensure state is reset when communication stops naturally
                                 set_bc_comm_running(false);
                             });
                         }
@@ -160,7 +165,10 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
 /// 2. Spawning two parallel tasks:
 ///    - bc_communication_task: Handles communication with the BC device
 ///    - websocket_reply_task: Sends message reports to the frontend via WebSocket
-/// 3. Waiting for both tasks to complete
+/// 3. Blocking until both tasks complete (when get_bc_comm_running() becomes false or connection fails)
+/// 
+/// Note: This function blocks until communication stops. It should be called from within
+/// a spawned task (e.g., tokio::spawn) to avoid blocking the caller.
 /// 
 /// Parameters:
 /// - sink: WebSocket sink for sending events to the frontend
@@ -241,10 +249,10 @@ async fn bc_communication_task(
                     match read_packet(&mut stream).await {
                         // Successfully read and parsed a message
                         Ok(message) => {
-                            // Parse message to report (no handler needed, direct result)
+                            // Parse message to report (synchronous parsing, returns Result)
                             match parse_message_to_report(message) {
                                 Ok(msg_report) => {
-                                    // Send directly to channel, no closure overhead
+                                    // Send parsed report to channel for WebSocket forwarding
                                     if let Err(e) = tx.send(msg_report).await {
                                         log::error!("Failed to send message report: {}", e);
                                     }
@@ -350,9 +358,9 @@ async fn websocket_reply_task(
                 // Timeout - continue loop
             }
         }
-        // Check if WebSocket is still running
+        // Check if WebSocket server is still running
         if !get_ws_running() {
-            log::info!("Detected stop bc command.");
+            log::info!("WebSocket server stopped, exiting reply task.");
             break;
         }
     }
@@ -370,11 +378,15 @@ impl WebSocketServer {
     /// 1. Checks if the server is already running
     /// 2. Binds to the configured address
     /// 3. Emits a "ws_started" event to the frontend
-    /// 4. Enters a loop to accept incoming connections
+    /// 4. Enters a blocking loop to accept incoming connections
     /// 5. Spawns a new task for each connection to handle frontend communication
     /// 
-    /// Note: This function will block until the server is stopped (via get_ws_running()).
-    /// It should be called from within an async runtime (e.g., tauri::async_runtime::spawn).
+    /// Note: This function blocks until the server is stopped (when get_ws_running() returns false).
+    /// It should be called from within a spawned async task (e.g., tauri::async_runtime::spawn)
+    /// to avoid blocking the application startup.
+    /// 
+    /// The server loop runs directly in this function (no nested spawn), simplifying
+    /// error handling and state management.
     /// 
     /// Parameters:
     /// - _msg_handler: A callback function for handling MessageReport objects
@@ -442,7 +454,8 @@ impl WebSocketServer {
                         // Successfully upgraded to WebSocket
                         Ok(Ok(ws_stream)) => {
                             // Spawn a new task to handle communication with this client
-                            // This is necessary to support concurrent connections
+                            // This allows the server loop to continue accepting new connections
+                            // while each client connection is handled independently
                             tokio::spawn(async move {
                                 frontend_communication(ws_stream).await;
                             });
