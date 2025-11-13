@@ -3,36 +3,45 @@ import { useEffect, useState, useRef } from "react";
 
 // Remove invoke import since we no longer need to call start_websocket command
 // import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+// import { listen } from "@tauri-apps/api/event";
 import { warn, debug, trace, info, error } from "@tauri-apps/plugin-log";
 
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Divider from '@mui/material/Divider';
+import Paper from '@mui/material/Paper';
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Collapse from '@mui/material/Collapse';
+import Chip from '@mui/material/Chip';
 
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormLabel from '@mui/material/FormLabel';
 import TextField from '@mui/material/TextField';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ChevronRightIcon from '@mui/icons-material/ExpandMore';
-import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
-import { TreeItem } from '@mui/x-tree-view/TreeItem';
+// import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+// import ChevronRightIcon from '@mui/icons-material/ExpandMore';
+// import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
+// import { TreeItem } from '@mui/x-tree-view/TreeItem';
 
-// import Box from '@mui/material/Box';
+// Icons
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
+import SettingsIcon from '@mui/icons-material/Settings';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import InboxIcon from '@mui/icons-material/Inbox';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+
 import Typography from '@mui/material/Typography';
-import Grid from '@mui/material/Grid2';
+// import Grid from '@mui/material/Grid2';
 
-// import { Button } from 'react-bootstrap';
-// import 'bootstrap/dist/css/bootstrap.min.css';
-// import Table from 'react-bootstrap/Table';
-
-// import { Grid } from "wx-react-grid";
-// import { Willow } from "wx-react-grid";
-
+import { lightTheme } from './theme';
 
 import "./App.css";
 
@@ -114,7 +123,6 @@ const IpAddressEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, set
   const handleIpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setIpAddress(value);
-    // info("ip address is changed to: " + value + "");
     if (checkIpAddress(value)) {
       setIpGood(true);
       setEditGood(portGood);
@@ -137,25 +145,29 @@ const IpAddressEdit = ({ ipAddress, portNumber, setIpAddress, setPortNumber, set
   }
 
   return (
-    <div className="addr-input-container">
-      <input
-        type="text"
-        style={{ width: '120px', borderColor: ipGood ? '#ccc' : 'red' }}
-        required
-        placeholder="IP Address"
+    <Stack direction="row" spacing={1} alignItems="center">
+      <TextField
+        size="small"
+        label="IP Address"
         value={ipAddress}
         onChange={handleIpChange}
+        error={!ipGood}
+        helperText={!ipGood ? 'Invalid IP address' : ''}
+        sx={{ width: '160px' }}
+        placeholder="127.0.0.1"
       />
-      <span className="separator">:</span>
-      <input
-        type="text"
-        style={{ width: '50px', borderColor: portGood ? '#ccc' : 'red' }}
-        required
-        placeholder="Port"
+      <Typography variant="body1" sx={{ mx: 0.5 }}>:</Typography>
+      <TextField
+        size="small"
+        label="Port"
         value={portNumber}
         onChange={handlePortChange}
+        error={!portGood}
+        helperText={!portGood ? 'Invalid port (1-65535)' : ''}
+        sx={{ width: '120px' }}
+        placeholder="8810"
       />
-    </div>
+    </Stack>
   )
 }
 
@@ -171,6 +183,7 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   const socketRef = useRef<WebSocket | null>(null);
   const [wsStarted, setWsStarted] = useState(false);
   const [configVisible, setConfigVisible] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
   async function webSocketStart() {
     if (!wsStarted) {
@@ -182,6 +195,8 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   }
 
   async function webSocketAttach() {
+    setConnectionStatus('connecting');
+    
     if (!socketRef.current) {
     }
     const wsAddr = 'ws://localhost:8080';
@@ -189,6 +204,7 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
     const ws = new WebSocket(wsAddr);
     if (!ws) {
       info("WebSocket is not connected.");
+      setConnectionStatus('disconnected');
       return;
     }
 
@@ -196,6 +212,7 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
 
     ws.onopen = function () {
       info("WebSocket connected.");
+      setConnectionStatus('connected');
       if (socketRef.current) {
         try {
           const messageObject: FrontEndCommand = { command: "start_recv", content: ipAddress + ":" + portNumber };
@@ -238,15 +255,18 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
 
     ws.onerror = function (event) {
       console.error('WebSocket Error: ', event);
+      setConnectionStatus('disconnected');
     };
 
     ws.onclose = function () {
       info("WebSocket closed.");
+      setConnectionStatus('disconnected');
       socketRef.current = null;
     };
 
     if (!socketRef.current) {
       info("WebSocket is not connected.");
+      setConnectionStatus('disconnected');
       return;
     }
   }
@@ -265,8 +285,10 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
       socketRef.current.send(messageJson);
       socketRef.current.close();
       socketRef.current = null;
+      setConnectionStatus('disconnected');
     } catch (error) {
       console.error('Error sending WebSocket message:', error);
+      setConnectionStatus('disconnected');
     }
   }
 
@@ -292,22 +314,72 @@ const Toolbar = ({ onRecvReport, setConfigPanelVisible }: ToolbarProps) => {
   }, []);
 
   return (
-    <div className="Toolbar">
-      <div className="addr-input-container">
-        <IpAddressEdit ipAddress={ipAddress} setIpAddress={setIpAddress} portNumber={portNumber} setPortNumber={setPortNumber} setEditGood={setAddressGood} />
-      </div>
-      <Stack spacing={2} direction="row" sx={{ paddingLeft: 5 }}>
-        <Tooltip title="Start receiving messages">
-          <Button variant="outlined" disabled={!addressGood} onClick={webSocketAttach}>Start</Button>
-        </Tooltip>
-        <Tooltip title="Stop receiving messages">
-          <Button variant="outlined" onClick={webSocketStop}>Stop</Button>
-        </Tooltip>
-        <Tooltip title="Configuration">
-          <Button variant="outlined" onClick={configPanelVisible}>Config</Button>
-        </Tooltip>
+    <Paper 
+      elevation={2} 
+      sx={{ 
+        p: 2, 
+        mb: 2,
+        borderRadius: 2,
+      }}
+    >
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+        <IpAddressEdit 
+          ipAddress={ipAddress} 
+          setIpAddress={setIpAddress} 
+          portNumber={portNumber} 
+          setPortNumber={setPortNumber} 
+          setEditGood={setAddressGood} 
+        />
+        
+        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+        
+        {/* 连接状态指示器 */}
+        <Chip
+          icon={
+            connectionStatus === 'connected' ? <CheckCircleIcon /> : 
+            connectionStatus === 'connecting' ? <HourglassEmptyIcon /> : 
+            <ErrorIcon />
+          }
+          label={connectionStatus}
+          color={connectionStatus === 'connected' ? 'success' : connectionStatus === 'connecting' ? 'warning' : 'default'}
+          variant="outlined"
+          size="small"
+        />
+        
+        <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
+          <Tooltip title="Start receiving messages">
+            <Button 
+              variant="contained" 
+              disabled={!addressGood || connectionStatus === 'connected' || connectionStatus === 'connecting'}
+              onClick={webSocketAttach}
+              startIcon={<PlayArrowIcon />}
+              color="primary"
+            >
+              Start
+            </Button>
+          </Tooltip>
+          <Tooltip title="Stop receiving messages">
+            <Button 
+              variant="outlined" 
+              disabled={connectionStatus === 'disconnected'}
+              onClick={webSocketStop}
+              startIcon={<StopIcon />}
+            >
+              Stop
+            </Button>
+          </Tooltip>
+          <Tooltip title="Configuration">
+            <Button 
+              variant="outlined" 
+              onClick={configPanelVisible}
+              startIcon={<SettingsIcon />}
+            >
+              Config
+            </Button>
+          </Tooltip>
+        </Stack>
       </Stack>
-    </div>
+    </Paper>
   );
 }
 
@@ -383,39 +455,76 @@ const ConfigPanel = ({ isVisible, onChange }: ConfigPanelProps) => {
   }
 
   return (
-    <div className="ConfigPanel" style={{ display: isVisible ? 'block' : 'none' }}>
-      <Stack
-        direction="row"
-        divider={<Divider orientation="vertical" flexItem />}
-        spacing={2}
+    <Collapse in={isVisible}>
+      <Paper 
+        elevation={1} 
+        sx={{ 
+          p: 2, 
+          mb: 2,
+          borderRadius: 2,
+        }}
       >
-        <div className="filterType">
-          <FormLabel id="radiogroupslect">Filter Type</FormLabel>
-          <RadioGroup
-            defaultValue="msgId"
-            name="filter-type-group"
-            onChange={handleFilterTypeChange}
-          >
-            <FormControlLabel value="msgId" control={<Radio />} label="Message ID" />
-            <FormControlLabel value="srcId" control={<Radio />} label="Sender" />
-            <FormControlLabel value="tarId" control={<Radio />} label="Receiver" />
-          </RadioGroup>
-        </div>
-        <div className="filterContent">
-          <Stack>
-            <div style={{ display: msgFilterVisible ? 'block' : 'none', padding: '10px' }} >
-              <TextField label="Message ID" variant="outlined" value={msgFilterData} onChange={handleFilterDataChange} name="msgId" />
-            </div>
-            <div style={{ display: srcFilterVisible ? 'block' : 'none', padding: '10px' }} >
-              <TextField label="Sender" variant="outlined" value={srcFilterData} onChange={handleFilterDataChange} name="srcId" />
-            </div>
-            <div style={{ display: tarFilterVisible ? 'block' : 'none', padding: '10px' }} >
-              <TextField label="Receiver" variant="outlined" value={tarFilterData} onChange={handleFilterDataChange} name="tarId" />
-            </div>
-          </Stack>
-        </div>
-      </Stack>
-    </div>
+        <Stack
+          direction="row"
+          divider={<Divider orientation="vertical" flexItem />}
+          spacing={3}
+          flexWrap="wrap"
+        >
+          <Box sx={{ minWidth: 200 }}>
+            <FormLabel id="radiogroupslect" sx={{ mb: 1, display: 'block' }}>
+              Filter Type
+            </FormLabel>
+            <RadioGroup
+              defaultValue="msgId"
+              name="filter-type-group"
+              onChange={handleFilterTypeChange}
+            >
+              <FormControlLabel value="msgId" control={<Radio />} label="Message ID" />
+              <FormControlLabel value="srcId" control={<Radio />} label="Sender" />
+              <FormControlLabel value="tarId" control={<Radio />} label="Receiver" />
+            </RadioGroup>
+          </Box>
+          
+          <Box sx={{ flex: 1, minWidth: 200 }}>
+            <Stack spacing={2}>
+              <Box sx={{ display: msgFilterVisible ? 'block' : 'none' }}>
+                <TextField 
+                  fullWidth
+                  label="Message ID" 
+                  variant="outlined" 
+                  value={msgFilterData} 
+                  onChange={handleFilterDataChange} 
+                  name="msgId"
+                  size="small"
+                />
+              </Box>
+              <Box sx={{ display: srcFilterVisible ? 'block' : 'none' }}>
+                <TextField 
+                  fullWidth
+                  label="Sender" 
+                  variant="outlined" 
+                  value={srcFilterData} 
+                  onChange={handleFilterDataChange} 
+                  name="srcId"
+                  size="small"
+                />
+              </Box>
+              <Box sx={{ display: tarFilterVisible ? 'block' : 'none' }}>
+                <TextField 
+                  fullWidth
+                  label="Receiver" 
+                  variant="outlined" 
+                  value={tarFilterData} 
+                  onChange={handleFilterDataChange} 
+                  name="tarId"
+                  size="small"
+                />
+              </Box>
+            </Stack>
+          </Box>
+        </Stack>
+      </Paper>
+    </Collapse>
   );
 }
 
@@ -425,59 +534,64 @@ interface MessageReportProps {
   reports: MessageReport[];
 }
 
-const MessageTable = ({ reports }: MessageReportProps) => {
-  return (
-    <div className="message-table-container">
-      <table className="message-table">
-        <thead>
-          <tr>
-            <th className="col1">DateTime</th>
-            <th className="col2">MessageID</th>
-            <th className="col3">Sender</th>
-            <th className="col4">Receiver</th>
-            <th className="col5">Payload</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reports.map((report, index) => (
-            <tr key={index}>
-              <td className="col1">{report.datetime}</td>
-              <td className="col2">{report.messageId}</td>
-              <td className="col3">{report.sender}</td>
-              <td className="col4">{report.receiver}</td>
-              <td className="col5">{report.payload}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
+// const MessageTable = ({ reports }: MessageReportProps) => {
+//   return (
+//     <div className="message-table-container">
+//       <table className="message-table">
+//         <thead>
+//           <tr>
+//             <th className="col1">DateTime</th>
+//             <th className="col2">MessageID</th>
+//             <th className="col3">Sender</th>
+//             <th className="col4">Receiver</th>
+//             <th className="col5">Payload</th>
+//           </tr>
+//         </thead>
+//         <tbody>
+//           {reports.map((report, index) => (
+//             <tr key={index}>
+//               <td className="col1">{report.datetime}</td>
+//               <td className="col2">{report.messageId}</td>
+//               <td className="col3">{report.sender}</td>
+//               <td className="col4">{report.receiver}</td>
+//               <td className="col5">{report.payload}</td>
+//             </tr>
+//           ))}
+//         </tbody>
+//       </table>
+//     </div>
+//   )
+// }
 
 const columns: GridColDef[] = [
   {
-    field: 'id', headerName: 'ID',
+    field: 'id', 
+    headerName: 'ID',
+    width: 60,
   },
   {
     field: 'ts',
     headerName: 'Time',
     type: 'string',
-    width: 160,
+    width: 180,
     editable: false,
   },
   {
     field: 'msgId',
-    headerName: 'Message',
+    headerName: 'Message ID',
+    width: 150,
     editable: false,
   },
   {
     field: 'sender',
     headerName: 'Sender',
+    width: 120,
     editable: false,
   },
   {
     field: 'receiver',
     headerName: 'Receiver',
+    width: 120,
     editable: false,
   },
   {
@@ -485,102 +599,140 @@ const columns: GridColDef[] = [
     headerName: 'Payload',
     editable: false,
     flex: 1,
+    minWidth: 200,
   },
 ];
-interface TreeNode {
-  id: string;
-  label: string;
-  children?: TreeNode[];
-}
+// interface TreeNode {
+//   id: string;
+//   label: string;
+//   children?: TreeNode[];
+// }
 
-const buildMessageTree = (report: MessageReport): TreeNode => {
-  const root: TreeNode = {
-    id: 'root',
-    label: 'Message',
-    children: [
-      {
-        id: 'datetime',
-        label: `Time: ${report.datetime}`
-      },
-      {
-        id: 'messageId', 
-        label: `Message ID: ${report.messageId}`
-      },
-      {
-        id: 'sender',
-        label: `Sender: ${report.sender}`
-      },
-      {
-        id: 'receiver',
-        label: `Receiver: ${report.receiver}`
-      }
-    ]
-  };
+// const buildMessageTree = (report: MessageReport): TreeNode => {
+//   const root: TreeNode = {
+//     id: 'root',
+//     label: 'Message',
+//     children: [
+//       {
+//         id: 'datetime',
+//         label: `Time: ${report.datetime}`
+//       },
+//       {
+//         id: 'messageId', 
+//         label: `Message ID: ${report.messageId}`
+//       },
+//       {
+//         id: 'sender',
+//         label: `Sender: ${report.sender}`
+//       },
+//       {
+//         id: 'receiver',
+//         label: `Receiver: ${report.receiver}`
+//       }
+//     ]
+//   };
+//
+//   // Split payload into bytes and create nodes
+//   if (report.payload) {
+//     const bytes = report.payload.split(' ');
+//     const payloadNode: TreeNode = {
+//       id: 'payload',
+//       label: 'Payload',
+//       children: bytes.map((byte, index) => ({
+//         id: `byte-${index}`,
+//         label: `Byte ${index}: ${byte}`
+//       }))
+//     };
+//     root.children?.push(payloadNode);
+//   }
+//
+//   return root;
+// };
 
-  // Split payload into bytes and create nodes
-  if (report.payload) {
-    const bytes = report.payload.split(' ');
-    const payloadNode: TreeNode = {
-      id: 'payload',
-      label: 'Payload',
-      children: bytes.map((byte, index) => ({
-        id: `byte-${index}`,
-        label: `Byte ${index}: ${byte}`
-      }))
-    };
-    root.children?.push(payloadNode);
-  }
-
-  return root;
-};
-
-const MessageTreeView = ({report}: {report: MessageReport}) => {
-  const tree = buildMessageTree(report);
-  
-  return (
-    <SimpleTreeView
-      aria-label="message tree"
-      defaultExpandedItems={['root']}
-    >
-      {tree.children?.map((node) => (
-        <TreeItem 
-          key={node.id}
-          itemId={node.id}
-          label={node.label}
-        >
-          {node.children?.map((child) => (
-            <TreeItem
-              key={child.id} 
-              itemId={child.id}
-              label={child.label}
-            />
-          ))}
-        </TreeItem>
-      ))}
-    </SimpleTreeView>
-  );
-};
+// const MessageTreeView = ({report}: {report: MessageReport}) => {
+//   const tree = buildMessageTree(report);
+//   
+//   return (
+//     <SimpleTreeView
+//       aria-label="message tree"
+//       defaultExpandedItems={['root']}
+//     >
+//       {tree.children?.map((node) => (
+//         <TreeItem 
+//           key={node.id}
+//           itemId={node.id}
+//           label={node.label}
+//         >
+//           {node.children?.map((child) => (
+//             <TreeItem
+//               key={child.id} 
+//               itemId={child.id}
+//               label={child.label}
+//             />
+//           ))}
+//         </TreeItem>
+//       ))}
+//     </SimpleTreeView>
+//   );
+// };
 
 const MessageGrid = ({ reports } : MessageReportProps) => {
+  if (reports.length === 0) {
+    return (
+      <Paper 
+        elevation={1}
+        sx={{ 
+          height: '100%',
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          borderRadius: 2,
+        }}
+      >
+        <InboxIcon sx={{ fontSize: 64, mb: 2, opacity: 0.5, color: 'text.secondary' }} />
+        <Typography variant="h6" color="text.secondary" gutterBottom>
+          No messages received yet
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Click Start to begin receiving messages
+        </Typography>
+      </Paper>
+    );
+  }
+
   return (
-    <div style={{ height: '90vh', width: '100%' }}>
-      <Grid container spacing={2}>
-        <Grid size={9}>
-          <DataGrid
-            rows={reports.map((report, index) => (
-              { id: index, ts: report.datetime, msgId: report.messageId, sender: report.sender, receiver: report.receiver, payload: report.payload }
-            ))}
-            columns={columns} 
-            columnVisibilityModel={{
-              id: false,
-            }}
-          />
-        </Grid>
-        <Grid size={3}>
-          {/* <MessageTreeView report={reports[0]} /> */} 
-        </Grid>
-      </Grid>
-    </div>
+    <Paper elevation={1} sx={{ height: '100%', borderRadius: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <DataGrid
+        rows={reports.map((report, index) => (
+          { 
+            id: index, 
+            ts: report.datetime, 
+            msgId: report.messageId, 
+            sender: report.sender, 
+            receiver: report.receiver, 
+            payload: report.payload 
+          }
+        ))}
+        columns={columns} 
+        columnVisibilityModel={{
+          id: false,
+        }}
+        pageSizeOptions={[25, 50, 100]}
+        initialState={{
+          pagination: {
+            paginationModel: { pageSize: 50 },
+          },
+        }}
+        sx={{
+          border: 'none',
+          flex: 1,
+          '& .MuiDataGrid-cell:focus': {
+            outline: 'none',
+          },
+        }}
+      />
+    </Paper>
   )
 }
 
@@ -631,16 +783,22 @@ const App = () => {
   }
 
   return (
-    <div className="App" >
-      <Stack spacing={2} >
-        {/* toolbar */}
-        <Toolbar onRecvReport={insertReport} setConfigPanelVisible={setConfigPanelVisible} />
-        <ConfigPanel isVisible={configPanelVisible} onChange={onFilterChange} />
-        {/* message display */}
-        <MessageGrid reports={reports.filter(FilterFunc)} />
-        {/* <MessageTable reports={reports.filter(FilterFunc)} /> */}
-      </Stack>
-    </div>
+    <ThemeProvider theme={lightTheme}>
+      <CssBaseline />
+      <Box sx={{ height: '100vh', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Container maxWidth={false} sx={{ py: 2, px: 2, height: '100%', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          <Stack spacing={2} sx={{ flex: 1, overflow: 'hidden', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* toolbar */}
+            <Toolbar onRecvReport={insertReport} setConfigPanelVisible={setConfigPanelVisible} />
+            <ConfigPanel isVisible={configPanelVisible} onChange={onFilterChange} />
+            {/* message display */}
+            <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <MessageGrid reports={reports.filter(FilterFunc)} />
+            </Box>
+          </Stack>
+        </Container>
+      </Box>
+    </ThemeProvider>
   );
 }
 
