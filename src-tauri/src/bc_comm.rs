@@ -102,17 +102,26 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
 
         // Step 3: Parse header
         let mut cursor = Cursor::new(&header_bytes);
+        let len = ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap();
+        let msg_id = ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap();
+        let ses_id = ReadBytesExt::read_u8(&mut cursor).unwrap();
+        let src_id = ReadBytesExt::read_u8(&mut cursor).unwrap();
+        let tgt_id = ReadBytesExt::read_u8(&mut cursor).unwrap();
+        let ts_sec = ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap();
+        let ts_us = ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap();
+        let seq_num = ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap();
+        
         let header = MsgHeader {
-            len: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
-            msg_id: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
-            ses_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-            src_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-            tgt_id: ReadBytesExt::read_u8(&mut cursor).unwrap(),
-            ts_sec: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
-            ts_us: ReadBytesExt::read_u32::<LittleEndian>(&mut cursor).unwrap(),
-            seq_num: ReadBytesExt::read_u16::<LittleEndian>(&mut cursor).unwrap(),
+            len,
+            msg_id,
+            ses_id,
+            src_id,
+            tgt_id,
+            ts_sec,
+            ts_us,
+            seq_num,
         };
-        let total_msg_len = header.len as usize;
+        let total_msg_len = len as usize;
         
         // Step 4: Validate message length
         // Total length = start_flag(1) + header + payload + crc(2) + end_flag(1)
@@ -154,7 +163,7 @@ pub async fn read_packet(stream: &mut tokio::net::TcpStream) -> Result<BcMessage
             continue;
         }
 
-        log::trace!("Successfully parsed packet #{} with message ID: {:04X}", packet_count, header.msg_id);
+        log::trace!("Successfully parsed packet #{} with message ID: {:04X}", packet_count, msg_id);
 
         // Step 9: Return complete BcMessage
         return Ok(BcMessage {
@@ -185,9 +194,14 @@ pub fn parse_message_to_report(message: BcMessage) -> Result<MessageReport, crat
     let header = message.header;
     let payload = message.payload;
 
-    // Fix packed struct alignment issue
+    // Copy fields from packed struct to avoid unaligned access
+    // This is safe because we're copying the values, not creating references
     let ts_sec = header.ts_sec;
     let ts_us = header.ts_us;
+    let src_id = header.src_id;
+    let tgt_id = header.tgt_id;
+    let msg_id = header.msg_id;
+    
     let ts = ts_sec as u64 * US_PER_SEC + ts_us as u64;
     let dt = match std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_micros(ts)) {
         Some(duration) => chrono::DateTime::<chrono::Utc>::from(duration),
@@ -197,9 +211,9 @@ pub fn parse_message_to_report(message: BcMessage) -> Result<MessageReport, crat
         }
     };
 
-    let sender = get_node_name(header.src_id);
-    let receiver = get_node_name(header.tgt_id);
-    let message_id = get_msg_name(header.msg_id);
+    let sender = get_node_name(src_id);
+    let receiver = get_node_name(tgt_id);
+    let message_id = get_msg_name(msg_id);
 
     // Optimize payload processing: use pre-allocated String and write! macro
     let payload_str = {
