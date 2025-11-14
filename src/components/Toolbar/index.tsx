@@ -1,9 +1,10 @@
 /**
- * ¹¤¾ßÀ¸×é¼ş
- * °üº¬ IP µØÖ·ÊäÈë¡¢Á¬½Ó¿ØÖÆºÍÅäÖÃ°´Å¥
+ * å·¥å…·æ ç»„ä»¶
+ * åŒ…å« IP åœ°å€è¾“å…¥ã€è¿æ¥æ§åˆ¶å’Œé…ç½®æŒ‰é’®
  */
 
 import { useState } from 'react';
+import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
@@ -41,61 +42,81 @@ export function Toolbar({ onMessageReceived, onConfigToggle }: ToolbarProps) {
   const isStopDisabled = connectionStatus === 'disconnected';
 
   return (
-    <Paper
-      elevation={2}
+    <Box
       sx={{
-        p: 2,
-        mb: 2,
-        borderRadius: 2,
+        width: '100%',
+        pt: 0.5, // ä¸ºä¸Šè¾¹é˜´å½±ç•™å‡ºç©ºé—´
+        px: 0.5, // ä¸ºå·¦å³é˜´å½±ç•™å‡ºç©ºé—´
+        boxSizing: 'border-box',
       }}
     >
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-        <IpAddressInput
-          ipAddress={ipAddress}
-          portNumber={portNumber}
-          onIpAddressChange={setIpAddress}
-          onPortNumberChange={setPortNumber}
-          onValidationChange={setAddressValid}
-        />
+      <Paper
+        elevation={2}
+        sx={{
+          p: 2,
+          borderRadius: 2,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+          width: '100%',
+        }}
+      >
+        <Stack 
+          direction="row" 
+          spacing={2} 
+          alignItems="center" 
+          flexWrap="wrap"
+          sx={{
+            width: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <IpAddressInput
+            ipAddress={ipAddress}
+            portNumber={portNumber}
+            onIpAddressChange={setIpAddress}
+            onPortNumberChange={setPortNumber}
+            onValidationChange={setAddressValid}
+          />
 
-        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+          <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
 
-        <ConnectionStatusChip status={connectionStatus} />
+          <ConnectionStatusChip status={connectionStatus} />
 
-        <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
-          <Tooltip title="Start receiving messages">
-            <Button
-              variant="contained"
-              disabled={isStartDisabled}
-              onClick={connect}
-              startIcon={<PlayArrowIcon />}
-              color="primary"
-            >
-              Start
-            </Button>
-          </Tooltip>
-          <Tooltip title="Stop receiving messages">
-            <Button
-              variant="outlined"
-              disabled={isStopDisabled}
-              onClick={disconnect}
-              startIcon={<StopIcon />}
-            >
-              Stop
-            </Button>
-          </Tooltip>
-          <Tooltip title="Configuration">
-            <Button
-              variant="outlined"
-              onClick={onConfigToggle}
-              startIcon={<SettingsIcon />}
-            >
-              Config
-            </Button>
-          </Tooltip>
+          <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
+            <Tooltip title="Start receiving messages">
+              <Button
+                variant="contained"
+                disabled={isStartDisabled}
+                onClick={connect}
+                startIcon={<PlayArrowIcon />}
+                color="primary"
+              >
+                Start
+              </Button>
+            </Tooltip>
+            <Tooltip title="Stop receiving messages">
+              <Button
+                variant="outlined"
+                disabled={isStopDisabled}
+                onClick={disconnect}
+                startIcon={<StopIcon />}
+              >
+                Stop
+              </Button>
+            </Tooltip>
+            <Tooltip title="Configuration">
+              <Button
+                variant="outlined"
+                onClick={onConfigToggle}
+                startIcon={<SettingsIcon />}
+              >
+                Config
+              </Button>
+            </Tooltip>
+          </Stack>
         </Stack>
-      </Stack>
-    </Paper>
+      </Paper>
+    </Box>
   );
 }
 

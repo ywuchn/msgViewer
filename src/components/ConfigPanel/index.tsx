@@ -1,6 +1,6 @@
 /**
- * ÅäÖÃÃæ°å×é¼ş
- * ÓÃÓÚÉèÖÃÏûÏ¢¹ıÂËÌõ¼ş
+ * é…ç½®é¢æ¿ç»„ä»¶
+ * ç”¨äºè®¾ç½®æ¶ˆæ¯è¿‡æ»¤æ¡ä»¶
  */
 
 import { useState } from 'react';
@@ -82,23 +82,43 @@ export function ConfigPanel({ isVisible, onChange }: ConfigPanelProps) {
 
   return (
     <Collapse in={isVisible}>
-      <Paper
-        elevation={1}
+      <Box
         sx={{
-          p: 2.5,
-          mb: 2,
-          borderRadius: 2,
+          width: '100%',
+          px: 0.5, // ä¸ºå·¦å³é˜´å½±ç•™å‡ºç©ºé—´
+          boxSizing: 'border-box',
         }}
       >
-        <Stack spacing={2.5}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <FilterListIcon color="primary" />
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Filter Configuration
-            </Typography>
-          </Box>
+        <Paper
+          elevation={1}
+          sx={{
+            p: 2.5,
+            borderRadius: 2,
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            width: '100%',
+          }}
+        >
+          <Stack spacing={2.5}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <FilterListIcon color="primary" />
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                Filter Configuration
+              </Typography>
+            </Box>
 
-          <Grid container spacing={3}>
+            <Grid 
+              container 
+              spacing={3}
+              sx={{
+                width: '100%',
+                m: 0,
+                boxSizing: 'border-box',
+                '& > .MuiGrid2-root': {
+                  boxSizing: 'border-box',
+                },
+              }}
+            >
             <Grid size={{ xs: 12, sm: 12, md: 4 }}>
               <Box
                 sx={{
@@ -223,6 +243,7 @@ export function ConfigPanel({ isVisible, onChange }: ConfigPanelProps) {
           </Grid>
         </Stack>
       </Paper>
+    </Box>
     </Collapse>
   );
 }

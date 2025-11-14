@@ -1,6 +1,6 @@
 /**
- * Á¬½Ó×´Ì¬Ö¸Ê¾Æ÷×é¼ş
- * ÏÔÊ¾ WebSocket Á¬½Ó×´Ì¬
+ * è¿æ¥çŠ¶æ€æŒ‡ç¤ºå™¨ç»„ä»¶
+ * æ˜¾ç¤º WebSocket è¿æ¥çŠ¶æ€
  */
 
 import Chip from '@mui/material/Chip';

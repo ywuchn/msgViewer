@@ -1,6 +1,6 @@
 import { createTheme } from '@mui/material/styles';
 
-// 亮色主题
+// 浜壊涓婚
 export const lightTheme = createTheme({
   palette: {
     mode: 'light',
@@ -64,7 +64,7 @@ export const lightTheme = createTheme({
   },
 });
 
-// 暗色主题
+// 鏆楄壊涓婚
 export const darkTheme = createTheme({
   palette: {
     mode: 'dark',

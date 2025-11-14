@@ -1,22 +1,22 @@
 /**
- * ÑéÖ¤¹¤¾ßº¯Êı
- * IP µØÖ·ºÍ¶Ë¿ÚºÅÑéÖ¤
+ * éªŒè¯å·¥å…·å‡½æ•°
+ * IP åœ°å€å’Œç«¯å£å·éªŒè¯
  */
 
 const IPV4_SEGMENT_REGEX = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
 const PORT_REGEX = /^(6553[0-5]|655[0-2]\d|65[0-4]\d{2}|6[0-4]\d{3}|[1-5]\d{4}|[1-9]\d{0,3})$/;
 
 /**
- * ÑéÖ¤ IPv4 µØÖ·¶ÎÊÇ·ñÓĞĞ§
+ * éªŒè¯ IPv4 åœ°å€æ®µæ˜¯å¦æœ‰æ•ˆ
  */
 export function isValidIpSegment(segment: string): boolean {
   return IPV4_SEGMENT_REGEX.test(segment);
 }
 
 /**
- * ÑéÖ¤ IPv4 µØÖ·ÊÇ·ñÓĞĞ§
- * @param ipAddress - ÒªÑéÖ¤µÄ IP µØÖ·
- * @returns Èç¹û IP µØÖ·ÓĞĞ§»òÎª¿ÕÔò·µ»Ø true
+ * éªŒè¯ IPv4 åœ°å€æ˜¯å¦æœ‰æ•ˆ
+ * @param ipAddress - è¦éªŒè¯çš„ IP åœ°å€
+ * @returns å¦‚æœ IP åœ°å€æœ‰æ•ˆæˆ–ä¸ºç©ºåˆ™è¿”å› true
  */
 export function validateIpAddress(ipAddress: string): boolean {
   if (typeof ipAddress !== "string") {
@@ -41,9 +41,9 @@ export function validateIpAddress(ipAddress: string): boolean {
 }
 
 /**
- * ÑéÖ¤¶Ë¿ÚºÅÊÇ·ñÓĞĞ§
- * @param portNumber - ÒªÑéÖ¤µÄ¶Ë¿ÚºÅ
- * @returns Èç¹û¶Ë¿ÚºÅÓĞĞ§£¨1-65535£©»òÎª¿ÕÔò·µ»Ø true
+ * éªŒè¯ç«¯å£å·æ˜¯å¦æœ‰æ•ˆ
+ * @param portNumber - è¦éªŒè¯çš„ç«¯å£å·
+ * @returns å¦‚æœç«¯å£å·æœ‰æ•ˆï¼ˆ1-65535ï¼‰æˆ–ä¸ºç©ºåˆ™è¿”å› true
  */
 export function validatePortNumber(portNumber: string): boolean {
   if (portNumber.length === 0) {

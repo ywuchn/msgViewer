@@ -1,14 +1,14 @@
 /**
- * ÏûÏ¢Ê÷¹¹½¨¹¤¾ß
- * ½«ÏûÏ¢±¨¸æ×ª»»ÎªÊ÷ĞÎ½á¹¹
+ * æ¶ˆæ¯æ ‘æ„å»ºå·¥å…·
+ * å°†æ¶ˆæ¯æŠ¥å‘Šè½¬æ¢ä¸ºæ ‘å½¢ç»“æ„
  */
 
 import type { MessageReport, TreeNode } from '../types';
 
 /**
- * ¹¹½¨ÏûÏ¢Ê÷½á¹¹
- * @param report - ÏûÏ¢±¨¸æ
- * @returns Ê÷ĞÎ½á¹¹½Úµã
+ * æ„å»ºæ¶ˆæ¯æ ‘ç»“æ„
+ * @param report - æ¶ˆæ¯æŠ¥å‘Š
+ * @returns æ ‘å½¢ç»“æ„èŠ‚ç‚¹
  */
 export function buildMessageTree(report: MessageReport): TreeNode {
   const root: TreeNode = {

@@ -1,6 +1,6 @@
 /**
- * ÏûÏ¢¹ıÂË Hook
- * ¹ÜÀíÏûÏ¢¹ıÂËÂß¼­ºÍ×´Ì¬
+ * æ¶ˆæ¯è¿‡æ»¤ Hook
+ * ç®¡ç†æ¶ˆæ¯è¿‡æ»¤é€»è¾‘å’ŒçŠ¶æ€
  */
 
 import { useMemo } from 'react';
@@ -8,12 +8,14 @@ import type { MessageReport, FilterProps } from '../types';
 import { FilterType } from '../types';
 
 /**
- * ¸ù¾İ¹ıÂËÌõ¼ş¹ıÂËÏûÏ¢
+ * æ ¹æ®è¿‡æ»¤æ¡ä»¶è¿‡æ»¤æ¶ˆæ¯
  */
 export function useMessageFilter(
   reports: MessageReport[],
   filter: FilterProps
 ): MessageReport[] {
+  // ä½¿ç”¨ filter.filterType å’Œ filter.filterData ä½œä¸ºä¾èµ–é¡¹ï¼Œè€Œä¸æ˜¯æ•´ä¸ª filter å¯¹è±¡
+  // è¿™æ ·å¯ä»¥é¿å…å› ä¸º filter å¯¹è±¡å¼•ç”¨å˜åŒ–å¯¼è‡´çš„é‡æ–°è®¡ç®—
   return useMemo(() => {
     if (filter.filterData === '') {
       return reports;
@@ -31,6 +33,6 @@ export function useMessageFilter(
           return true;
       }
     });
-  }, [reports, filter]);
+  }, [reports, filter.filterType, filter.filterData]);
 }
 

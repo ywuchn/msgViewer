@@ -1,6 +1,6 @@
 /**
- * WebSocket ���ӹ��� Hook
- * ��װ WebSocket �����߼���״̬����
+ * WebSocket 连接管理 Hook
+ * 封装 WebSocket 连接逻辑和状态管理
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -22,7 +22,7 @@ interface UseWebSocketReturn {
 }
 
 /**
- * WebSocket ���ӹ��� Hook
+ * WebSocket 连接管理 Hook
  */
 export function useWebSocket({
   ipAddress,
@@ -31,17 +31,15 @@ export function useWebSocket({
 }: UseWebSocketOptions): UseWebSocketReturn {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const socketRef = useRef<WebSocket | null>(null);
-  const [wsStarted, setWsStarted] = useState(false);
   const onMessageReceivedRef = useRef(onMessageReceived);
   const ipAddressRef = useRef(ipAddress);
   const portNumberRef = useRef(portNumber);
 
-  // ���ֻص�������������
-  useEffect(() => {
-    onMessageReceivedRef.current = onMessageReceived;
-    ipAddressRef.current = ipAddress;
-    portNumberRef.current = portNumber;
-  }, [onMessageReceived, ipAddress, portNumber]);
+  // 在每次渲染时更新 ref，避免在 useEffect 中依赖回调函数
+  // 这样可以防止因为回调函数引用变化导致的无限更新
+  onMessageReceivedRef.current = onMessageReceived;
+  ipAddressRef.current = ipAddress;
+  portNumberRef.current = portNumber;
 
   const connect = useCallback(() => {
     setConnectionStatus('connecting');
@@ -124,19 +122,15 @@ export function useWebSocket({
     }
   }, []);
 
+  // 清理函数：组件卸载时关闭 WebSocket 连接
   useEffect(() => {
-    if (!wsStarted) {
-      info("webSocketStart");
-      setWsStarted(true);
-    }
-
     return () => {
       if (socketRef.current) {
         socketRef.current.close();
         socketRef.current = null;
       }
     };
-  }, [wsStarted]);
+  }, []); // 空依赖数组，只在组件卸载时执行清理
 
   return {
     connectionStatus,
