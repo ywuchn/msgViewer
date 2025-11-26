@@ -8,8 +8,8 @@ use tauri::Emitter;
 
 use crate::{
     models::{MessageReport, FrontEndCommand},
-    app_state::{get_app_handle, get_ws_running, set_ws_running, get_bc_comm_running, set_bc_comm_running},
-    bc_comm::{parse_message_to_report, read_packet},
+    app_state::{get_app_handle, get_ws_running, set_ws_running, get_dev_comm_running, set_bc_comm_running},
+    dev_comm::{parse_message_to_report, read_packet},
     config::{DEFAULT_WEBSOCKET_ADDR, DEFAULT_CHANNEL_BUFFER_SIZE, DEFAULT_NETWORK_TIMEOUT_MS},
 };
 
@@ -58,7 +58,7 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
                     match cmd.command.as_str() {
                         // Start receiving messages from BC device
                         "start_recv" => {
-                            if get_bc_comm_running() {
+                            if get_dev_comm_running() {
                                 log::info!("communication is running.");
                                 // Send error message to frontend
                                 if let Ok(error_msg) = serde_json::to_string(&json!({
@@ -165,7 +165,7 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
 /// 2. Spawning two parallel tasks:
 ///    - bc_communication_task: Handles communication with the BC device
 ///    - websocket_reply_task: Sends message reports to the frontend via WebSocket
-/// 3. Blocking until both tasks complete (when get_bc_comm_running() becomes false or connection fails)
+/// 3. Blocking until both tasks complete (when get_dev_comm_running() becomes false or connection fails)
 /// 
 /// Note: This function blocks until communication stops. It should be called from within
 /// a spawned task (e.g., tokio::spawn) to avoid blocking the caller.
@@ -207,9 +207,9 @@ pub async fn start_comm_with_bc(
 /// Task for BC communication
 /// This function handles the communication with the BC device:
 /// 1. Establishes a TCP connection to the BC device
-/// 2. Sends "bc_monitor_started" event when connection is established
+/// 2. Sends "dev_monitor_started" event when connection is established
 /// 3. Continuously reads and processes messages from the BC device
-/// 4. Sends "bc_monitor_stopped" event when connection is closed
+/// 4. Sends "dev_monitor_stopped" event when connection is closed
 /// 
 /// Parameters:
 /// - tx: Channel sender for passing MessageReport to the WebSocket reply task
@@ -228,23 +228,23 @@ async fn bc_communication_task(
         )
         .await
         {
-            // Successfully connected to the BC device
+            // Successfully connected to the device
             Ok(Ok(mut stream)) => {
-                log::info!("Connected to bc");
-                // Send bc_monitor_started event via WebSocket
+                log::info!("Connected to device");
+                // Send dev_monitor_started event via WebSocket
                 if let Ok(msg) = serde_json::to_string(&json!({
-                    "event": "bc_monitor_started",
+                    "event": "dev_monitor_started",
                     "data": { "address": addr.clone() }
                 })) {
                     {
                         let mut guard = sink.lock().await;
                         if let Err(e) = guard.send(tokio_tungstenite::tungstenite::Message::Text(msg)).await {
-                            log::error!("Failed to send 'bc_monitor_started' via WebSocket: {}", e);
+                            log::error!("Failed to send 'dev_monitor_started' via WebSocket: {}", e);
                         }
                     }
                 }
                 
-                // Message processing loop - reads and processes messages from the BC device
+                // Message processing loop - reads and processes messages from the device
                 loop {
                     match read_packet(&mut stream).await {
                         // Successfully read and parsed a message
@@ -274,27 +274,27 @@ async fn bc_communication_task(
                         },
                     }
                     // Check if communication should be stopped
-                    if !get_bc_comm_running() {
-                        log::info!("Detected stop bc command.");
+                    if !get_dev_comm_running() {
+                        log::info!("Detected stop communication command.");
                         break;
                     }
                 }
 
-                log::info!("Disconnected to bc");
-                // Send bc_monitor_stopped event via WebSocket
+                log::info!("Disconnected to device");
+                // Send communication_stopped event via WebSocket
                 if let Ok(msg) = serde_json::to_string(&json!({
-                    "event": "bc_monitor_stopped",
+                    "event": "dev_monitor_stopped",
                     "data": { "address": addr.clone() }
                 })) {
                     {
                         let mut guard = sink.lock().await;
                         if let Err(e) = guard.send(tokio_tungstenite::tungstenite::Message::Text(msg)).await {
-                            log::error!("Failed to send 'bc_monitor_stopped' via WebSocket: {}", e);
+                            log::error!("Failed to send 'dev_monitor_stopped' via WebSocket: {}", e);
                         }
                     }
                 }
             }
-            // Failed to connect to the BC device
+            // Failed to connect to the device
             Ok(Err(e)) => {
                 log::warn!("Failed to connect to {}: {}", addr, e);
             }
@@ -306,8 +306,8 @@ async fn bc_communication_task(
         }
 
         // Check if communication should be stopped
-        if !get_bc_comm_running() {
-            log::info!("Detected stop bc command.");
+        if !get_dev_comm_running() {
+            log::info!("Detected stop device command.");
             break;
         }
     }

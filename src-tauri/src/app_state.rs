@@ -39,7 +39,7 @@ pub fn set_ws_running(val: bool) {
 }
 
 /// Get BC communication running status
-pub fn get_bc_comm_running() -> bool {
+pub fn get_dev_comm_running() -> bool {
     if let Ok(running) = BC_RUNNING.lock() {
         return *running;
     } else {

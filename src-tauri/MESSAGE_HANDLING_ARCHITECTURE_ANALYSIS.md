@@ -21,7 +21,7 @@ loop {
     }
 }
 
-// 在 bc_comm.rs 中
+// 在 dev_comm.rs 中
 pub async fn handle_message<F, Fut>(message: BcMessage, message_handler: F) 
 where 
     F: FnOnce(MessageReport) -> Fut,
@@ -126,7 +126,7 @@ websocket_reply_task → 发送到前端
 **核心思想**: 将消息解析和消息处理分离，`handle_message` 只负责解析并返回结果。
 
 ```rust
-// bc_comm.rs
+// dev_comm.rs
 /// 解析消息为 MessageReport
 pub fn parse_message_to_report(message: BcMessage) -> Result<MessageReport, MessageParseError> {
     // 解析逻辑...
@@ -346,7 +346,7 @@ loop {
 
 **代码示例**:
 ```rust
-// bc_comm.rs
+// dev_comm.rs
 pub fn parse_message_to_report(message: BcMessage) -> Result<MessageReport, MessageParseError> {
     // 现有解析逻辑...
     Ok(msg_report)

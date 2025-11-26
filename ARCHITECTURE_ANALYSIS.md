@@ -8,26 +8,26 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     前端 (React + TypeScript)                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   App.tsx    │  │  Toolbar     │  │ MessageGrid  │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────┘      │
-│         │                 │                                  │
-│         └─────────┬───────┘                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   App.tsx    │  │  Toolbar     │  │ MessageGrid  │       │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────┘       │
+│         │                 │                                 │
+│         └─────────┬───────┘                                 │
 │                   │ WebSocket (ws://localhost:8080)         │
 └───────────────────┼─────────────────────────────────────────┘
                     │
 ┌───────────────────┼─────────────────────────────────────────┐
-│                   │           后端 (Rust + Tauri)           │
+│                   │           后端 (Rust + Tauri)            │
 │         ┌─────────▼─────────┐                               │
 │         │  WebSocket Server │                               │
 │         │  (websocket.rs)   │                               │
 │         └─────────┬─────────┘                               │
-│                   │                                          │
+│                   │                                         │
 │         ┌─────────▼─────────┐                               │
 │         │  BC Communicator  │                               │
-│         │   (bc_comm.rs)     │                               │
+│         │   (dev_comm.rs)     │                             │
 │         └─────────┬─────────┘                               │
-│                   │ TCP                                      │
+│                   │ TCP                                     │
 └───────────────────┼─────────────────────────────────────────┘
                     │
          ┌──────────▼──────────┐
@@ -50,7 +50,7 @@
 src-tauri/src/
 ├── lib.rs          # 应用入口，初始化 WebSocket 服务器
 ├── websocket.rs    # WebSocket 服务器实现
-├── bc_comm.rs      # BC 设备通信处理
+├── dev_comm.rs      # BC 设备通信处理
 ├── models.rs       # 数据模型定义
 ├── utils.rs        # 工具函数
 └── app_state.rs    # 全局状态管理
@@ -84,7 +84,7 @@ src-tauri/src/
 **消息格式**：
 ```json
 {
-  "event": "msg_updated" | "bc_monitor_started" | "bc_monitor_stopped",
+  "event": "msg_updated" | "dev_monitor_started" | "dev_monitor_stopped",
   "data": { ... }
 }
 ```
@@ -98,7 +98,7 @@ src-tauri/src/
 - 第 233 行仍使用 Tauri emit，与整体设计不一致
 - 缺少连接管理（多连接场景下的处理）
 
-#### 2.2.3 BC 通信模块 (`bc_comm.rs`)
+#### 2.2.3 BC 通信模块 (`dev_comm.rs`)
 
 **核心功能**：
 1. **TCP 连接管理**：自动重连机制
@@ -160,7 +160,7 @@ ws.onmessage = function (event) {
 ```
 BC 设备 (TCP)
     ↓
-bc_comm.rs (read_packet)
+dev_comm.rs (read_packet)
     ↓
 handle_message (解析为 MessageReport)
     ↓
@@ -186,7 +186,7 @@ websocket.rs (frontend_communication)
     ↓
 start_comm_with_bc
     ↓
-bc_comm.rs (TCP 连接)
+dev_comm.rs (TCP 连接)
 ```
 
 ## 五、设计优势
@@ -275,8 +275,8 @@ function useWebSocket(url: string) {
 ```typescript
 type WsEvent = 
   | { event: "msg_updated"; data: MessageReport }
-  | { event: "bc_monitor_started"; data: { address: string } }
-  | { event: "bc_monitor_stopped"; data: { address: string } };
+  | { event: "dev_monitor_started"; data: { address: string } }
+  | { event: "dev_monitor_stopped"; data: { address: string } };
 ```
 
 ## 七、总结

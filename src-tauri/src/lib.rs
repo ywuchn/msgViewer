@@ -9,7 +9,7 @@ use tauri::WindowEvent;
 pub mod models;
 pub mod utils;
 pub mod websocket;
-pub mod bc_comm;
+pub mod dev_comm;
 pub mod app_state;
 pub mod config;
 

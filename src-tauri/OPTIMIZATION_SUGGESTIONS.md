@@ -3,7 +3,7 @@
 ## 一、高优先级优化（影响正确性和稳定性）
 
 ### 1. ? 字节序不一致问题
-**位置**: `bc_comm.rs` 第 106-113 行
+**位置**: `dev_comm.rs` 第 106-113 行
 
 **问题**:
 - 当前使用 `LittleEndian` 解析消息头
@@ -19,7 +19,7 @@
 **位置**: 多处使用 `unwrap()` 和简单的错误类型
 
 **问题**:
-- `bc_comm.rs` 中多处使用 `unwrap()`，可能导致 panic
+- `dev_comm.rs` 中多处使用 `unwrap()`，可能导致 panic
 - `SockErrCode` 枚举过于简单，缺少详细信息
 - 没有统一的错误处理机制
 
@@ -44,7 +44,7 @@
 - 考虑使用状态机模式管理连接状态
 
 ### 4. ? 资源泄漏风险
-**位置**: `websocket.rs` 和 `bc_comm.rs` 中的任务管理
+**位置**: `websocket.rs` 和 `dev_comm.rs` 中的任务管理
 
 **问题**:
 - `tokio::spawn` 创建的任务没有统一管理
@@ -72,7 +72,7 @@
 - 对于少量消息类型，考虑使用 `match` 语句
 
 ### 6. ? 过度使用 `tokio::spawn`
-**位置**: `websocket.rs` 第 229 行，`bc_comm.rs` 消息处理
+**位置**: `websocket.rs` 第 229 行，`dev_comm.rs` 消息处理
 
 **问题**:
 - 每个消息都创建新的 task，高频率消息会导致 task 爆炸
@@ -156,7 +156,7 @@
 - 添加配置验证机制
 
 ### 12. ? 消息处理扩展性
-**位置**: `bc_comm.rs` 的 `handle_message` 函数
+**位置**: `dev_comm.rs` 的 `handle_message` 函数
 
 **问题**:
 - 消息处理逻辑固定，难以扩展
@@ -232,7 +232,7 @@
 - 考虑使用宏生成常量映射
 
 ### 18. ? 内存优化
-**位置**: `bc_comm.rs` 和 `websocket.rs`
+**位置**: `dev_comm.rs` 和 `websocket.rs`
 
 **问题**:
 - 消息处理中可能存在不必要的内存分配

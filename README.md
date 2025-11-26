@@ -65,7 +65,7 @@
 │                   │                                          │
 │         ┌─────────▼─────────┐                               │
 │         │  BC Communicator  │                               │
-│         │   (bc_comm.rs)     │                               │
+│         │   (dev_comm.rs)     │                               │
 │         └─────────┬─────────┘                               │
 │                   │ TCP                                      │
 └───────────────────┼─────────────────────────────────────────┘
@@ -82,7 +82,7 @@
 
 - **`lib.rs`** - 应用入口，初始化 WebSocket 服务器
 - **`websocket.rs`** - WebSocket 服务器实现，处理前端连接和消息转发
-- **`bc_comm.rs`** - BC 设备通信模块，处理 TCP 连接和消息解析
+- **`dev_comm.rs`** - BC 设备通信模块，处理 TCP 连接和消息解析
 - **`models.rs`** - 数据模型定义（MessageReport, FrontEndCommand 等）
 - **`utils.rs`** - 工具函数（消息ID映射、节点名称映射等）
 - **`app_state.rs`** - 全局状态管理（WebSocket 和 BC 通信状态）
@@ -109,7 +109,7 @@
 **后端 → 前端（事件）**：
 ```json
 {
-  "event": "msg_updated" | "bc_monitor_started" | "bc_monitor_stopped",
+  "event": "msg_updated" | "dev_monitor_started" | "dev_monitor_stopped",
   "data": { ... }
 }
 ```
@@ -201,7 +201,7 @@ msgViewer/
 │   ├── src/
 │   │   ├── lib.rs           # 应用入口
 │   │   ├── websocket.rs     # WebSocket 服务器
-│   │   ├── bc_comm.rs       # BC 通信模块
+│   │   ├── dev_comm.rs       # BC 通信模块
 │   │   ├── models.rs        # 数据模型
 │   │   ├── utils.rs         # 工具函数
 │   │   └── app_state.rs     # 状态管理

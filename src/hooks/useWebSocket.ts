@@ -77,10 +77,10 @@ export function useWebSocket({
         if (wsMessage.event === "msg_updated") {
           const report: MessageReport = wsMessage.data as MessageReport;
           onMessageReceivedRef.current(report);
-        } else if (wsMessage.event === "bc_monitor_started") {
-          info("bc_monitor_started: " + JSON.stringify(wsMessage.data));
-        } else if (wsMessage.event === "bc_monitor_stopped") {
-          info("bc_monitor_stopped: " + JSON.stringify(wsMessage.data));
+        } else if (wsMessage.event === "dev_monitor_started") {
+          info("dev_monitor_started: " + JSON.stringify(wsMessage.data));
+        } else if (wsMessage.event === "dev_monitor_stopped") {
+          info("dev_monitor_stopped: " + JSON.stringify(wsMessage.data));
         } else if (wsMessage.event === "ws_started") {
           info("ws_started: " + JSON.stringify(wsMessage.data));
         }
