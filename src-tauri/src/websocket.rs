@@ -8,7 +8,7 @@ use tauri::Emitter;
 
 use crate::{
     models::{MessageReport, FrontEndCommand},
-    app_state::{get_app_handle, get_ws_running, set_ws_running, get_dev_comm_running, set_bc_comm_running},
+    app_state::{get_app_handle, get_ws_running, set_ws_running, get_dev_comm_running, set_dev_comm_running},
     dev_comm::{parse_message_to_report, read_packet},
     config::{DEFAULT_WEBSOCKET_ADDR, DEFAULT_CHANNEL_BUFFER_SIZE, DEFAULT_NETWORK_TIMEOUT_MS},
 };
@@ -40,7 +40,7 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
         // Check if WebSocket should stop before attempting to read
         if !get_ws_running() {
             log::info!("WebSocket is no longer running, exiting...");
-            set_bc_comm_running(false);
+            set_dev_comm_running(false);
             return;
         }
 
@@ -72,7 +72,7 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
                                 }
                                 continue;
                             }
-                            set_bc_comm_running(true);
+                            set_dev_comm_running(true);
 
                             // Spawn the communication task instead of awaiting it
                             // This is necessary because start_comm_with_bc blocks until communication stops.
@@ -82,12 +82,12 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
                             tokio::spawn(async move {
                                 start_comm_with_bc(sink, cmd.content).await;
                                 // Ensure state is reset when communication stops naturally
-                                set_bc_comm_running(false);
+                                set_dev_comm_running(false);
                             });
                         }
                         // Stop receiving messages from BC device
                         "stop_recv" => {
-                            set_bc_comm_running(false);
+                            set_dev_comm_running(false);
                             // Send confirmation to frontend
                             if let Ok(confirm_msg) = serde_json::to_string(&json!({
                                 "event": "stopped",
@@ -131,7 +131,7 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
             // WebSocket stream closed
             Ok(None) => {
                 log::info!("WebSocket stream closed");
-                set_bc_comm_running(false);
+                set_dev_comm_running(false);
                 return;
             }
             // Error occurred while reading from WebSocket
@@ -148,7 +148,7 @@ pub async fn frontend_communication(stream: WebSocketStream<tokio::net::TcpStrea
                     // Log unexpected errors as warnings
                     log::warn!("Websocket read error: {}", e);
                 }
-                set_bc_comm_running(false);
+                set_dev_comm_running(false);
                 return;
             }
             // Timeout occurred while waiting for a message

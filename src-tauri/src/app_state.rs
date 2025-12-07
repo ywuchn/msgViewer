@@ -2,15 +2,16 @@
 
 use std::sync::RwLock;
 use once_cell::sync::OnceCell;
-use tauri::AppHandle;
 use lazy_static::lazy_static;
+
+use tauri::AppHandle;
 
 // Application handle
 pub static APP_HANDLE: OnceCell<RwLock<Option<AppHandle>>> = OnceCell::new();
 
 // Global state flags
 lazy_static! {
-    pub static ref BC_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+    pub static ref DEV_COMM_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
     pub static ref WS_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 }
 
@@ -38,9 +39,9 @@ pub fn set_ws_running(val: bool) {
     }
 }
 
-/// Get BC communication running status
+/// Get device communication running status
 pub fn get_dev_comm_running() -> bool {
-    if let Ok(running) = BC_RUNNING.lock() {
+    if let Ok(running) = DEV_COMM_RUNNING.lock() {
         return *running;
     } else {
         return false;
@@ -48,8 +49,8 @@ pub fn get_dev_comm_running() -> bool {
 }
 
 /// Set BC communication running status
-pub fn set_bc_comm_running(val: bool) {
-    if let Ok(mut running) = BC_RUNNING.lock() {
+pub fn set_dev_comm_running(val: bool) {
+    if let Ok(mut running) = DEV_COMM_RUNNING.lock() {
         *running = val;
     }
 }

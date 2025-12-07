@@ -15,7 +15,7 @@ pub mod config;
 
 use models::MessageReport;
 use websocket::WebSocketServer;
-use app_state::{APP_HANDLE, set_ws_running, set_bc_comm_running};
+use app_state::{APP_HANDLE, set_ws_running, set_dev_comm_running};
 
 // Constants
 const MSG_SCM_MCM_AXIS_DATAOUTPUT_SET: u16 = 0x1020;
@@ -75,7 +75,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { .. } = event {
                 log::info!("Received window close request; stopping WebSocket and communication tasks.");
                 set_ws_running(false);
-                set_bc_comm_running(false);
+                set_dev_comm_running(false);
             }
         })
         .plugin(
@@ -92,7 +92,7 @@ pub fn run() {
             eprintln!("Error while running Tauri application: {}", err);
             // Set WebSocket server to stop when application exits
             set_ws_running(false);
-            set_bc_comm_running(false);
+            set_dev_comm_running(false);
             err
         })
         .expect("error while running tauri application");

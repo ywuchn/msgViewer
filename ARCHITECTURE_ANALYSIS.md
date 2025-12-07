@@ -63,7 +63,7 @@ src-tauri/src/
 - **状态变量**：
   - `APP_HANDLE`: Tauri 应用句柄（用于兼容性，但已基本不用）
   - `WS_RUNNING`: WebSocket 服务器运行状态
-  - `BC_RUNNING`: BC 通信运行状态
+  - `DEV_COMM_RUNNING`: BC 通信运行状态
 
 **优点**：
 - 线程安全的状态管理
